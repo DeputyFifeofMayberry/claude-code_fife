@@ -1,9 +1,9 @@
 {
-  "comment": "Backend roster for claude-fife. Anthropic (subscription OAuth via router --claude-login) is the launch default; exact client-visible model IDs are fixed in Task 6 from the router /v1/models output after logins. Placeholders only - no secrets in this file.",
+  "comment": "Backend roster for claude-fife, verified live 2026-10-18 (all three answered real prompts through the router). Anthropic subscription OAuth and Codex subscription OAuth live in router\\auth; z.ai key is provisioned into router\\config.yaml at setup.",
   "default": "anthropic-subscription",
   "providers": [
-    { "id": "anthropic-subscription", "via": "router-oauth", "models": ["<from /v1/models>"] },
+    { "id": "anthropic-subscription", "via": "router-oauth", "example-models": ["claude-sonnet-4-5-20250929", "claude-opus-4-6", "claude-haiku-4-5-20251001"] },
     { "id": "zai", "via": "router-claude-upstream https://api.z.ai/api/anthropic", "models": ["glm-5.3", "glm-5.3-flash", "glm-4.7"] },
-    { "id": "codex-subscription", "via": "router-oauth", "models": ["<from /v1/models>"] }
+    { "id": "codex-subscription", "via": "router-oauth", "example-models": ["gpt-5.6-luna", "gpt-6-astra", "gpt-6.1-sol"] }
   ]
 }
