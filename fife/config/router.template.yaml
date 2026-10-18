@@ -1,0 +1,37 @@
+config-version: 8
+
+# claude-fife router config (CLIProxyAPI, pinned v8.0.33)
+# commercial-mode is MANDATORY here: without it the router writes error-*.log
+# request dumps (headers + bodies) under auth-dir\logs, which violates the
+# fife contract that no prompt/response content ever hits disk.
+server:
+  host: "127.0.0.1"
+  port: 8317
+  commercial-mode: true
+
+access:
+  api-keys:
+    - "__ROUTER_LOCAL_KEY__"
+
+oauth:
+  auth-dir: "__AUTH_DIR__"
+
+observability:
+  logs:
+    debug: false
+    logging-to-file: false
+    request-log: false
+
+api-keys:
+  claude:
+    - name: zai
+      base-url: "https://api.z.ai/api/anthropic"
+      keys:
+        - api-key: "__ZAI_API_KEY__"
+      models:
+        - name: "glm-5.3"
+          alias: "glm-5.3"
+        - name: "glm-5.3-flash"
+          alias: "glm-5.3-flash"
+        - name: "glm-4.7"
+          alias: "glm-4.7"

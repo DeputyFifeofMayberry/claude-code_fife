@@ -1,2 +1,7 @@
 .DS_Store
 
+
+# claude-fife runtime outputs (never commit secrets)
+router/auth/
+*.local.yaml
+api-key.txt
