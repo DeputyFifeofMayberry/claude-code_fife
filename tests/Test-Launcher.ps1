@@ -60,6 +60,7 @@ Assert (($rec2.args -join '|') -eq '-p|hello|--model|glm-test') "cmd args mangle
 $marker = Join-Path $tmp 'router-started.txt'
 $routerStub = Join-Path $tmp 'stub-router.cmd'
 "@echo off`r`necho started > `"$marker`"" | Set-Content $routerStub -Encoding ASCII
+Set-Content (Join-Path $tmp 'router.yaml') 'stub' -Encoding ASCII
 $env:CLAUDE_FIFE_ROUTER_EXE = $routerStub
 $env:CLAUDE_FIFE_ROUTER_CONFIG = Join-Path $tmp 'router.yaml'
 $env:STUB_OUT = Join-Path $tmp 'out3.json'

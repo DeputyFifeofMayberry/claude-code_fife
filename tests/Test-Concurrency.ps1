@@ -12,11 +12,13 @@ New-Item -ItemType Directory -Force -Path $proj | Out-Null
 Set-Content (Join-Path $proj 'CLAUDE.md') '# Concurrency probe - shared instructions file. When asked for a word, reply with the single word: shared-ok.' -Encoding UTF8
 Set-Content (Join-Path $proj 'sample.txt') 'probe content' -Encoding UTF8
 
-# 1. claude-fife session in the project
+# 1. claude-fife session in the project (real exit code)
 Push-Location $proj
 try {
+    $env:CLAUDE_FIFE_EXIT_WITH_CODE = '1'
     $fifeOut = (& pwsh -NoProfile -File 'C:\Users\barne\claude-fife\bin\claude-fife.ps1' -p 'What word does CLAUDE.md tell you to reply with? Reply with only that word.' 2>&1 | Out-String)
     $fifeCode = $LASTEXITCODE
+    Remove-Item Env:CLAUDE_FIFE_EXIT_WITH_CODE -ErrorAction SilentlyContinue
     Assert ($fifeCode -eq 0 -and $fifeOut -match 'shared-ok') "claude-fite did not answer per shared CLAUDE.md: $fifeOut"
 
     # 2. OpenCode session in the same project (simple no-tool prompt: no permissions needed)

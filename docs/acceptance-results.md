@@ -31,12 +31,22 @@ and 5 vacuous in the first run):
 Real logins performed by the user: router `-claude-login` and
 `-codex-login` (auth files live in `C:\Users\barne\claude-fife\router\auth\`).
 
+## Post-removal re-verification (Task 9, 2026-10-18)
+
+After real `claude` was uninstalled (binary + `%LOCALAPPDATA%\claude`
+removed): `claude` no longer resolves; `claude-fife --version` reports
+2.1.302; default-Anthropic prompt answered; `tests\Test-Isolation.ps1` PASS.
+
+Full gauntlet re-run **after** the review fix pass (router request-dump
+logging disabled via `server.commercial-mode: true`, hardened whole-root
+secret sweep, exit-code assertions made real, router hash pin, auth-dir ACL,
+launcher no-config guard): **13/13 checks PASS** including a fresh
+three-backend `Test-Backends` proof (claude-sonnet-4-5 / glm-5.3 / gpt
+roster id) with `codex` CLI still healthy and isolation PASS.
+
 Known non-blocking observations:
 - The engine warns "doesn't recognize the model glm-5.3 … assumes 200k
   context" for non-Anthropic model ids. Cosmetic; behavior is correct.
 - Interactive TUI `/model` switching across providers was proven
   mechanically (same gateway discovery, per-backend prompts); the user can
   watch it live any time by launching `claude-fife` and using `/model`.
-
-Pending: Task 9 — real `claude` uninstall (gated on explicit user
-confirmation), then post-removal re-verification.

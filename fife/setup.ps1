@@ -41,8 +41,11 @@ if (-not (Test-Path $settingsOut)) {
     Copy-Item (Join-Path $fifeSrc 'config\settings.template.json') $settingsOut
 }
 
-# 4. Router exe (pinned CLIProxyAPI v8.0.33)
+# 4. Router exe (pinned CLIProxyAPI v8.0.33, hash-verified)
 $routerExe = Join-Path $Root 'router\cli-proxy-api.exe'
+$routerPinFile = Join-Path $fifeSrc 'config\router-pin.txt'
+$routerPin = @{};
+foreach ($line in Get-Content $routerPinFile) { if ($line -match '^([^=]+)=(.*)$') { $routerPin[$Matches[1]] = $Matches[2] } }
 if (-not (Test-Path $routerExe)) {
     if ($RouterExeSource -and (Test-Path $RouterExeSource)) {
         Copy-Item $RouterExeSource $routerExe
@@ -54,6 +57,8 @@ if (-not (Test-Path $routerExe)) {
         Copy-Item (Join-Path $extract 'cli-proxy-api.exe') $routerExe
     }
 }
+$actualRouterHash = (Get-FileHash $routerExe -Algorithm SHA256).Hash
+if ($actualRouterHash -ne $routerPin.SHA256) { throw "Router hash mismatch: expected $($routerPin.SHA256), got $actualRouterHash (pin: $($routerPin.RouterPin)). Refusing to install." }
 
 # 5. Router local key (create once)
 $keyFile = Join-Path $Root 'router\api-key.txt'
@@ -62,7 +67,7 @@ if (-not (Test-Path $keyFile)) {
 }
 $localKey = (Get-Content $keyFile -Raw).Trim()
 
-# 6. Router config (create once)
+# 6. Router config (create once); repair if the local key drifted (partial restore)
 $routerCfg = Join-Path $Root 'router\config.yaml'
 if (-not (Test-Path $routerCfg)) {
     $zai = Get-ZaiKey
@@ -72,9 +77,18 @@ if (-not (Test-Path $routerCfg)) {
     $yaml = $yaml.Replace('__AUTH_DIR__', ((Join-Path $Root 'router\auth') -replace '\\','/'))
     $yaml = $yaml.Replace('__ZAI_API_KEY__', $zai)
     Set-Content $routerCfg $yaml -Encoding UTF8
+} elseif (-not (Get-Content $routerCfg -Raw).Contains($localKey)) {
+    Write-Warning 'router config.yaml does not contain the current api-key.txt value (partial restore?) - repairing the access key line.'
+    $cfg = Get-Content $routerCfg -Raw
+    $cfg = $cfg -replace '(?m)^(access:\s*\n\s*api-keys:\s*\n\s*-\s*")[^"]*(")', "`$1$localKey`$2"
+    Set-Content $routerCfg $cfg -Encoding UTF8
 }
 
-# 7. Restrict secret-bearing files to the current user
+# 7. Restrict secret-bearing files and the OAuth token dir to the current user
+$authDir = Join-Path $Root 'router\auth'
+if (Test-Path $authDir) {
+    & icacls $authDir /inheritance:r /grant:r "$($env:USERNAME):(OI)(CI)F" | Out-Null
+}
 foreach ($f in @($keyFile, $routerCfg)) {
     if (Test-Path $f) {
         & icacls $f /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null

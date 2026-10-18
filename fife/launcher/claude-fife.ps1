@@ -29,10 +29,14 @@ function Test-RouterHealth {
 
 function Ensure-Router {
     if (-not (Test-Path $routerExe)) { return }
+    if (-not (Test-Path $routerCfg)) {
+        # NEVER start the router without its config: the upstream default binds
+        # all interfaces, which would expose OAuth-backed endpoints on the LAN.
+        Write-Warning 'claude-fife: router config missing - starting engine WITHOUT router. Run fife\setup.ps1 to repair.'
+        return
+    }
     if (Test-RouterHealth) { return }
-    $argList = @()
-    if (Test-Path $routerCfg) { $argList += @('--config', $routerCfg) }
-    Start-Process -FilePath $routerExe -ArgumentList $argList -WindowStyle Hidden | Out-Null
+    Start-Process -FilePath $routerExe -ArgumentList @('--config', $routerCfg) -WorkingDirectory (Split-Path -Parent $routerExe) -WindowStyle Hidden | Out-Null
     $deadline = (Get-Date).AddSeconds($waitSec)
     while ((Get-Date) -lt $deadline) {
         if (Test-RouterHealth) { return }

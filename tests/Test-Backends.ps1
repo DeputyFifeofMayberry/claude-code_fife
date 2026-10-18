@@ -7,14 +7,17 @@ function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')
 
 function Invoke-Fife([string[]]$fifeArgs) {
+    $env:CLAUDE_FIFE_EXIT_WITH_CODE = '1'
     $out = (& pwsh -NoProfile -File 'C:\Users\barne\claude-fife\bin\claude-fife.ps1' @fifeArgs 2>&1 | Out-String)
     $code = $LASTEXITCODE
+    Remove-Item Env:CLAUDE_FIFE_EXIT_WITH_CODE -ErrorAction SilentlyContinue
     return [pscustomobject]@{ Code = $code; Out = $out }
 }
 
 # Anthropic subscription (default when --model omitted): pick a current Sonnet model id
 $roster = (Invoke-RestMethod -Uri 'http://127.0.0.1:8317/v1/models' -Headers @{ Authorization = "Bearer $((Get-Content 'C:\Users\barne\claude-fife\router\api-key.txt' -Raw).Trim())" }).data.id
-$anthroModel = $roster | Where-Object { $_ -match '^claude-sonnet' } | Select-Object -First 1
+$anthroModel = $roster | Where-Object { $_ -match '^claude-sonnet-4-5' } | Select-Object -First 1
+if (-not $anthroModel) { $anthroModel = $roster | Where-Object { $_ -match '^claude-sonnet' -and $_ -notmatch '-4-20250514$' } | Select-Object -First 1 }
 $glmModel = 'glm-5.3'
 $codexModel = $roster | Where-Object { $_ -match '^gpt-5' -or $_ -match '^gpt-6' } | Select-Object -First 1
 Assert ($anthroModel) "no claude-sonnet model in roster"
