@@ -20,6 +20,12 @@ function Get-ZaiKey {
     try { return (& $py -c $code 2>$null | Out-String).Trim() } catch { return $null }
 }
 
+function Get-OpenRouterKey {
+    $k = $env:OPENROUTER_API_KEY
+    if ($k) { return $k.Trim() }
+    return $null
+}
+
 # 1. Tree
 foreach ($d in 'bin','config','router','logs',(Join-Path 'router' 'auth')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Root $d) | Out-Null
@@ -76,12 +82,37 @@ if (-not (Test-Path $routerCfg)) {
     $yaml = $yaml.Replace('__ROUTER_LOCAL_KEY__', $localKey)
     $yaml = $yaml.Replace('__AUTH_DIR__', ((Join-Path $Root 'router\auth') -replace '\\','/'))
     $yaml = $yaml.Replace('__ZAI_API_KEY__', $zai)
+    $orKey = Get-OpenRouterKey
+    if (-not $orKey) { Write-Warning 'OPENROUTER_API_KEY not set; router config written with placeholder - OpenRouter models will not work until provisioned.'; $orKey = 'OPENROUTER-KEY-NOT-PROVISIONED' }
+    $yaml = $yaml.Replace('__OPENROUTER_API_KEY__', $orKey)
     Set-Content $routerCfg $yaml -Encoding UTF8
 } elseif (-not (Get-Content $routerCfg -Raw).Contains($localKey)) {
     Write-Warning 'router config.yaml does not contain the current api-key.txt value (partial restore?) - repairing the access key line.'
     $cfg = Get-Content $routerCfg -Raw
     $cfg = $cfg -replace '(?m)^(access:\s*\n\s*api-keys:\s*\n\s*-\s*")[^"]*(")', "`$1$localKey`$2"
     Set-Content $routerCfg $cfg -Encoding UTF8
+}
+
+# 6b. Existing config without the OpenRouter provider: append the block from the
+# template (the claude: list is last in the file). Only when a real key is
+# available, so a placeholder never ends up advertising models that cannot work.
+$cfgNow = Get-Content $routerCfg -Raw
+if ($cfgNow -notmatch '(?m)^\s*-\s*name:\s*openrouter\s*$') {
+    $orKey = Get-OpenRouterKey
+    if (-not $orKey) {
+        Write-Warning 'router config has no openrouter provider and OPENROUTER_API_KEY is not set; skipping. Set it and re-run setup.'
+    } else {
+        $tpl = Get-Content (Join-Path $fifeSrc 'config\router.template.yaml') -Raw
+        $m = [regex]::Match($tpl, '(?ms)^    - name: openrouter\s*$.*')
+        if (-not $m.Success) { throw 'openrouter block not found in router.template.yaml' }
+        $block = $m.Value.Replace('__OPENROUTER_API_KEY__', $orKey).TrimEnd() -replace '\r?\n', "`n"
+        $eol = if ($cfgNow.Contains("`r`n")) { "`r`n" } else { "`n" }
+        $block = $block -replace "`n", $eol
+        $new = $cfgNow.TrimEnd() + $eol + $block + $eol
+        Set-Content $routerCfg $new -Encoding UTF8 -NoNewline
+        if ((Get-Content $routerCfg -Raw) -notmatch '(?m)^\s*-\s*name:\s*openrouter\s*$') { throw 'openrouter block not present after write' }
+        Write-Host 'Added openrouter provider to router config.'
+    }
 }
 
 # 7. Restrict secret-bearing files and the OAuth token dir to the current user

@@ -35,3 +35,10 @@ api-keys:
           alias: "glm-5.3-flash"
         - name: "glm-4.7"
           alias: "glm-4.7"
+    - name: openrouter
+      base-url: "https://openrouter.ai/api"
+      keys:
+        - api-key: "__OPENROUTER_API_KEY__"
+      models:
+        - name: "deepseek/deepseek-v4.1-flash-1017"
+          alias: "deepseek-v4.1-flash"
