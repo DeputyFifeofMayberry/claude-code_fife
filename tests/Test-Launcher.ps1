@@ -42,7 +42,7 @@ $env:CLAUDE_FIFE_EXIT_WITH_CODE = '1'
 $code = $LASTEXITCODE
 Assert ($code -eq 7) "ps1 exit code not propagated (got $code)"
 $rec = Get-Content $env:STUB_OUT -Raw | ConvertFrom-Json
-Assert (($rec.args -join '|') -eq '-p|hello world|--model|glm-test|say "hi"') "args mangled: $($rec.args -join '|')"
+Assert (($rec.args -join '|') -eq '--allow-dangerously-skip-permissions|-p|hello world|--model|glm-test|say "hi"') "args mangled: $($rec.args -join '|')"
 Assert ($rec.configDir -eq (Join-Path $env:CLAUDE_FIFE_ROOT 'config')) "config dir wrong: $($rec.configDir)"
 Assert ($rec.autoupdater -eq '1') 'autoupdater not disabled for engine'
 Assert ($rec.baseUrl -eq 'http://127.0.0.1:8317') "router base url wrong: $($rec.baseUrl)"
@@ -54,7 +54,7 @@ $env:STUB_OUT = Join-Path $tmp 'out2.json'
 $code = $LASTEXITCODE
 Assert ($code -eq 7) "cmd exit code not propagated (got $code)"
 $rec2 = Get-Content $env:STUB_OUT -Raw | ConvertFrom-Json
-Assert (($rec2.args -join '|') -eq '-p|hello|--model|glm-test') "cmd args mangled: $($rec2.args -join '|')"
+Assert (($rec2.args -join '|') -eq '--allow-dangerously-skip-permissions|-p|hello|--model|glm-test') "cmd args mangled: $($rec2.args -join '|')"
 
 # (e1) router started only when unhealthy
 $marker = Join-Path $tmp 'router-started.txt'

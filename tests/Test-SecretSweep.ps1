@@ -18,12 +18,19 @@ $zai = (& python3 -c 'import sqlite3,json,pathlib; con=sqlite3.connect("file:"+s
 $localKey = (Get-Content $keyFile -Raw).Trim()
 if ($zai.Length -lt 10) { $failures += 'could not read live z.ai key for sweep' }
 
+# OpenRouter key: read from the openrouter block of the router config itself.
+# The placeholder means "not provisioned" and is not a secret.
+$orKey = $null
+$orMatch = [regex]::Match((Get-Content $routerCfg -Raw), '(?ms)-\s*name:\s*openrouter\s*$.*?api-key:\s*"([^"]+)"')
+if ($orMatch.Success -and $orMatch.Groups[1].Value -ne 'OPENROUTER-KEY-NOT-PROVISIONED') { $orKey = $orMatch.Groups[1].Value }
+$patterns = @($zai, $localKey) + @($orKey | Where-Object { $_ })
+
 $allowed = @((Resolve-Path $routerCfg).Path, (Resolve-Path $keyFile).Path)
 $excludedNames = @('claude-fife-engine.exe', 'cli-proxy-api.exe')
 
 $hits = Get-ChildItem $FifeRoot -Recurse -File -Force -ErrorAction SilentlyContinue |
     Where-Object { $allowed -notcontains $_.FullName -and $excludedNames -notcontains $_.Name } |
-    Select-String -Pattern @($zai, $localKey) -List -ErrorAction SilentlyContinue
+    Select-String -SimpleMatch $patterns -List -ErrorAction SilentlyContinue
 
 if ($hits) {
     $failures += "secret values found in: $(($hits | ForEach-Object Path | Select-Object -Unique) -join ', ')"

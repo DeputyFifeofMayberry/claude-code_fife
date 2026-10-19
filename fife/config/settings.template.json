@@ -1,3 +1,7 @@
 {
-  "autoUpdates": false
+  "autoUpdates": false,
+  "env": {
+    "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS": "2000",
+    "CLAUDE_AUTO_BACKGROUND_TASKS": "1"
+  }
 }

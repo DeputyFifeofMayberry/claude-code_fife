@@ -11,9 +11,20 @@ if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exi
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("fife-setup-test-" + [guid]::NewGuid().ToString('N'))
 $routerSrc = 'C:\Users\barne\AppData\Local\Temp\opencode\router-spike\cliproxy\cli-proxy-api.exe'
 
-# Run setup twice (idempotency)
+# Dummy OpenRouter key: keeps the test independent of the live key
+$dummyOr = 'sk-or-v1-' + [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')
+$prevOr = $env:OPENROUTER_API_KEY
+$env:OPENROUTER_API_KEY = $dummyOr
+
+# Run setup twice (idempotency). Between runs, simulate a tree whose settings
+# carry a user edit and are missing one of the template's background keys.
 & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
 Assert ($LASTEXITCODE -eq 0) "setup run 1 failed ($LASTEXITCODE)"
+$settings = Join-Path $tmp 'config\settings.json'
+$pre = Get-Content $settings -Raw | ConvertFrom-Json
+$pre | Add-Member -NotePropertyName theme -NotePropertyValue 'dark'
+$pre.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS')
+$pre | ConvertTo-Json -Depth 10 | Set-Content $settings -Encoding UTF8
 & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
 Assert ($LASTEXITCODE -eq 0) "setup run 2 (idempotency) failed ($LASTEXITCODE)"
 
@@ -36,6 +47,9 @@ Assert (Test-Path $settings) 'settings.json not created'
 if (Test-Path $settings) {
     $sj = Get-Content $settings -Raw | ConvertFrom-Json
     Assert ($sj.autoUpdates -eq $false) 'settings autoUpdates not false'
+    Assert ($sj.env.CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS -eq '2000') 'missing background default not merged'
+    Assert ($sj.env.CLAUDE_AUTO_BACKGROUND_TASKS -eq '1') 'background tasks default not set'
+    Assert ($sj.theme -eq 'dark') 'settings merge overwrote a user value'
 }
 
 $cfgPath = Join-Path $tmp 'router\config.yaml'
@@ -52,6 +66,23 @@ if (Test-Path $cfgPath) {
         Assert ($localKey.Length -ge 16) 'router local key too short'
         Assert ($cfg.Contains($localKey)) 'router local key not in config access keys'
     }
+    # OpenRouter: provider present exactly once, dummy key in router config only
+    Assert ($cfg.Contains($dummyOr)) 'OpenRouter key not provisioned into router config'
+    Assert (([regex]::Matches($cfg, '(?m)^\s*-\s*name:\s*openrouter\s*$')).Count -eq 1) 'openrouter provider block missing or duplicated'
+    Assert ($cfg.Contains('deepseek/deepseek-v4.1-flash-1017')) 'deepseek model missing from router config'
+    $orLeaks = Get-ChildItem $tmp -Recurse -File | Where-Object { $_.FullName -ne $cfgPath } |
+        Select-String -SimpleMatch $dummyOr -List -ErrorAction SilentlyContinue
+    Assert (-not $orLeaks) "OpenRouter key leaked into other files: $($orLeaks.Path -join ', ')"
+
+    # Existing config without the block gets it appended (and only once)
+    $stripped = [regex]::Replace($cfg, '(?ms)^    - name: openrouter\s*$.*', '').TrimEnd() + "`n"
+    Set-Content $cfgPath $stripped -Encoding UTF8 -NoNewline
+    & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
+    Assert ($LASTEXITCODE -eq 0) "setup append run failed ($LASTEXITCODE)"
+    $cfg2 = Get-Content $cfgPath -Raw
+    Assert (([regex]::Matches($cfg2, '(?m)^\s*-\s*name:\s*openrouter\s*$')).Count -eq 1) 'append step did not add exactly one openrouter block'
+    Assert ($cfg2.Contains($dummyOr)) 'appended block missing the key'
+
     # z.ai secret: must be in router config ONLY (within this temp root)
     $pycode = 'import sqlite3,json,pathlib; con=sqlite3.connect("file:"+str(pathlib.Path.home()/".local"/"share"/"opencode"/"opencode-local.db")+"?mode=ro", uri=True); r=con.execute("SELECT value FROM credential WHERE integration_id=? AND active=1 LIMIT 1", ("zai-coding-plan",)).fetchone(); print(json.loads(r[0])["key"])'
     $zai = (& python3 -c $pycode 2>$null | Out-String).Trim()
@@ -69,5 +100,6 @@ if (Test-Path $cfgPath) {
 }
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+$env:OPENROUTER_API_KEY = $prevOr
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
 Write-Host 'PASS: Test-Setup'

@@ -14,6 +14,16 @@ Machine scope: this Windows machine, user `barne` only (by design).
 | Router local API key + z.ai key | `C:\Users\barne\claude-fife\router\api-key.txt`, `config.yaml` — never commit, never share |
 | OpenCode | untouched, separate product/config |
 
+## Defaults
+
+`config\settings.json` is created from `fife\config\settings.template.json`.
+The template disables auto-updates and turns on background-by-default:
+Bash/PowerShell commands move to the background after 2 seconds, and
+subagents and MCP tool calls auto-background. Setup merges any missing keys
+into an existing `settings.json` without overwriting local edits.
+To turn the behavior off, set `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` to `1`
+in the `env` block.
+
 ## Fresh setup (this machine, after the fife tree is deleted)
 
 ```powershell
