@@ -103,6 +103,27 @@ function Ensure-LabelsProxy {
     Write-Warning 'claude-fife: model-labels proxy did not start - using router directly.'
 }
 
+# The startup symbol is the ANSI art in assets\claude-symbol.ans: a
+# 256-color drawing of the Claude mark shown above the engine's welcome
+# screen. Piped runs and -p/--print stay byte-clean, so the symbol only
+# appears for an interactive session unless CLAUDE_FIFE_SYMBOL says otherwise
+# (always|never).
+function Show-ClaudeSymbol([string[]]$EngineArgs) {
+    $mode = if ($env:CLAUDE_FIFE_SYMBOL) { $env:CLAUDE_FIFE_SYMBOL.ToLowerInvariant() } else { 'auto' }
+    if ($mode -in @('never', '0', 'off', 'false')) { return }
+    if ($mode -notin @('always', '1', 'on', 'true')) {
+        if ([Console]::IsOutputRedirected -or [Console]::IsInputRedirected) { return }
+        if (@($EngineArgs | Where-Object { $_ -match '^(--print|-p|--help|-h|--output-format(=.*)?|mcp|config|doctor)$' }).Count -gt 0) { return }
+    }
+    $tool = Join-Path $root 'bin\Show-ClaudeSymbol.ps1'
+    if (-not (Test-Path $tool)) { $tool = Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\Show-ClaudeSymbol.ps1' }
+    $symbol = Join-Path $root 'assets\claude-symbol.ans'
+    if (-not (Test-Path $symbol)) { $symbol = Join-Path (Split-Path -Parent $PSScriptRoot) 'assets\claude-symbol.ans' }
+    if (-not (Test-Path $tool) -or -not (Test-Path $symbol)) { return }
+    # A broken or missing asset must never keep the session from starting.
+    try { & $tool -Path $symbol } catch { }
+}
+
 $script:baseUrl = $routerUrl
 
 # `update` and `upgrade` are engine verbs that install upstream Claude Code into
@@ -251,6 +272,7 @@ if (-not (Test-Path $engine)) {
     exit 1
 }
 
+Show-ClaudeSymbol $args
 Ensure-EnginePin
 Ensure-Router
 Ensure-LabelsProxy
