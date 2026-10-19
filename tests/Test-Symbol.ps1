@@ -14,6 +14,20 @@ $launcherPs1 = Join-Path $repo 'fife\launcher\claude-fife.ps1'
 
 Assert (Test-Path $asset) 'symbol asset missing'
 Assert (Test-Path $tool) 'symbol renderer missing'
+
+$mod = Join-Path $repo 'fife\mods\fife-symbol'
+$modManifest = Join-Path $mod '.claude-plugin\plugin.json'
+Assert (Test-Path $modManifest) 'fife-symbol mod manifest missing'
+Assert (Test-Path (Join-Path $mod 'hooks\register.tsx')) 'fife-symbol mod hooks module missing'
+if (Test-Path $modManifest) {
+    $manifest = Get-Content $modManifest -Raw | ConvertFrom-Json
+    Assert ($manifest.name -eq 'fife-symbol') "mod name wrong: $($manifest.name)"
+}
+$modHooks = Join-Path $mod 'hooks\hooks.json'
+if (Test-Path $modHooks) {
+    $hooksJson = Get-Content $modHooks -Raw | ConvertFrom-Json
+    Assert (@($hooksJson.modules) -contains './register.tsx') 'mod hooks.json does not load register.tsx'
+}
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
 
 $esc = [string][char]27
@@ -46,9 +60,14 @@ $renderedDefaultFile = Join-Path $tmp 'rendered-default.ans'
 Assert ($LASTEXITCODE -eq 0) 'renderer default-path lookup failed'
 Assert ((Get-Content $renderedDefaultFile -Raw).Contains($esc)) 'renderer default path printed no ANSI art'
 
-# Launcher: stub engine records nothing and exits 0.
+# Launcher: stub engine records its argv and exits 0.
+$argFile = Join-Path $tmp 'engine-args.txt'
 $stub = Join-Path $tmp 'stub-engine.ps1'
-'$null = $args; exit 0' | Set-Content $stub -Encoding UTF8
+@'
+$args | Set-Content $env:STUB_ARGS -Encoding UTF8
+exit 0
+'@ | Set-Content $stub -Encoding UTF8
+$env:STUB_ARGS = $argFile
 $env:CLAUDE_FIFE_ENGINE_PATH = $stub
 $env:CLAUDE_FIFE_ROUTER_EXE = Join-Path $tmp 'no-router.exe'
 $env:CLAUDE_FIFE_ROUTER_URL = 'http://127.0.0.1:8317'
@@ -71,8 +90,20 @@ Remove-Item Env:CLAUDE_FIFE_SYMBOL -ErrorAction SilentlyContinue
 $autoOut = (& pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String)
 Assert (-not $autoOut.Contains($esc + '[38;5;236m')) 'auto mode printed the symbol into a redirected stream'
 
+# Without an installed mod the engine gets no --plugin-dir; with one it does.
+$recorded = @(Get-Content $argFile -ErrorAction SilentlyContinue)
+Assert (-not ($recorded -contains '--plugin-dir')) 'launcher passed --plugin-dir with no installed mod'
+
+$tempMod = Join-Path $env:CLAUDE_FIFE_ROOT 'config\mods\fife-symbol'
+New-Item -ItemType Directory -Force -Path $tempMod | Out-Null
+$null = (& pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String)
+$recorded = @(Get-Content $argFile -ErrorAction SilentlyContinue)
+Assert ($recorded -contains '--plugin-dir') 'launcher did not load the installed fife-symbol mod'
+$at = [array]::IndexOf($recorded, '--plugin-dir')
+Assert ($at -ge 0 -and $recorded[$at + 1] -eq $tempMod) 'launcher --plugin-dir does not name the installed mod'
+
 foreach ($name in 'CLAUDE_FIFE_ROOT', 'CLAUDE_FIFE_ENGINE_PATH', 'CLAUDE_FIFE_ROUTER_EXE', 'CLAUDE_FIFE_ROUTER_URL',
-    'CLAUDE_FIFE_HEALTH_URL', 'CLAUDE_FIFE_ROUTER_WAIT_SEC', 'CLAUDE_FIFE_EXIT_WITH_CODE') {
+    'CLAUDE_FIFE_HEALTH_URL', 'CLAUDE_FIFE_ROUTER_WAIT_SEC', 'CLAUDE_FIFE_EXIT_WITH_CODE', 'STUB_ARGS') {
     Remove-Item "Env:$name" -ErrorAction SilentlyContinue
 }
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue

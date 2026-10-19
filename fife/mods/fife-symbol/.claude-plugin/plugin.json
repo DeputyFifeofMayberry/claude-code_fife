@@ -1,0 +1,7 @@
+{
+  "name": "fife-symbol",
+  "version": "0.1.0",
+  "description": "Draws the claude-fife ANSI symbol in the band above the prompt until the session starts.",
+  "author": { "name": "DeputyFifeofMayberry" },
+  "types": "./types/index.d.ts"
+}
