@@ -41,12 +41,18 @@ if (Test-Path $engine) {
 }
 Assert (Test-Path (Join-Path $tmp 'bin\claude-fife.ps1')) 'launcher ps1 not copied to bin'
 Assert (Test-Path (Join-Path $tmp 'bin\claude-fife.cmd')) 'launcher cmd not copied to bin'
+$versionFile = Join-Path $tmp 'config\fife-version.txt'
+Assert (Test-Path $versionFile) 'package version marker not written'
+if (Test-Path $versionFile) {
+    Assert ((Get-Content $versionFile -Raw).Trim() -match '^dev-[0-9a-f]+$') 'repo setup should record a dev build id'
+}
 
 $settings = Join-Path $tmp 'config\settings.json'
 Assert (Test-Path $settings) 'settings.json not created'
 if (Test-Path $settings) {
     $sj = Get-Content $settings -Raw | ConvertFrom-Json
     Assert ($sj.autoUpdates -eq $false) 'settings autoUpdates not false'
+    Assert ($sj.env.DISABLE_UPDATES -eq '1') 'settings DISABLE_UPDATES not set'
     Assert ($sj.env.CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS -eq '2000') 'missing background default not merged'
     Assert ($sj.env.CLAUDE_AUTO_BACKGROUND_TASKS -eq '1') 'background tasks default not set'
     Assert ($sj.theme -eq 'dark') 'settings merge overwrote a user value'
