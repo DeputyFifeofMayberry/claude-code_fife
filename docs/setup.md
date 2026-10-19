@@ -13,6 +13,7 @@ Machine scope: this Windows machine, user `barne` only (by design).
 | Router OAuth logins (Claude + Codex subscriptions) | `C:\Users\barne\claude-fife\router\auth\` |
 | Router local API key + z.ai key | `C:\Users\barne\claude-fife\router\api-key.txt`, `config.yaml` — never commit, never share |
 | Installed build id (used by `claude-fife update`) | `C:\Users\barne\claude-fife\config\fife-version.txt` |
+| Startup symbol (256-color ANSI art) | `C:\Users\barne\claude-fife\assets\claude-symbol.ans` |
 | OpenCode | untouched, separate product/config |
 
 ## Defaults
@@ -29,6 +30,13 @@ subagents and MCP tool calls auto-background. Setup merges any missing keys
 into an existing `settings.json` without overwriting local edits.
 To turn the behavior off, set `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` to `1`
 in the `env` block.
+
+Interactive launches print the claude-fife startup symbol — the 256-color
+ANSI art in `assets\claude-symbol.ans` — before the engine draws its welcome
+screen. Non-interactive runs (`-p`, `--help`, redirected output) stay
+byte-clean; `CLAUDE_FIFE_SYMBOL=never` turns the symbol off and
+`CLAUDE_FIFE_SYMBOL=always` forces it on. See `docs\claude-symbol.md` for how
+to update the art.
 
 ## Fresh setup (this machine, after the fife tree is deleted)
 

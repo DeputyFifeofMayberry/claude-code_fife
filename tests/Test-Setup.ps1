@@ -28,9 +28,16 @@ $pre | ConvertTo-Json -Depth 10 | Set-Content $settings -Encoding UTF8
 & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
 Assert ($LASTEXITCODE -eq 0) "setup run 2 (idempotency) failed ($LASTEXITCODE)"
 
-foreach ($d in 'bin','config','router','logs') {
+foreach ($d in 'bin','config','router','logs','assets') {
     Assert (Test-Path (Join-Path $tmp $d)) "missing dir: $d"
 }
+$symbolAsset = Join-Path $tmp 'assets\claude-symbol.ans'
+Assert (Test-Path $symbolAsset) 'startup symbol asset not installed'
+if (Test-Path $symbolAsset) {
+    $installedArt = [System.IO.File]::ReadAllText($symbolAsset, [System.Text.Encoding]::UTF8)
+    Assert ($installedArt.Contains([string][char]27 + '[38;5;')) 'installed symbol lost its color sequences'
+}
+Assert (Test-Path (Join-Path $tmp 'bin\Show-ClaudeSymbol.ps1')) 'symbol renderer not copied to bin'
 $engine = Join-Path $tmp 'bin\claude-fife-engine.exe'
 Assert (Test-Path $engine) 'engine not installed in bin'
 if (Test-Path $engine) {

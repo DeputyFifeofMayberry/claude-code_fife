@@ -39,7 +39,7 @@ function Get-OpenRouterKey {
 }
 
 # 1. Tree
-foreach ($d in 'bin','config','router','logs',(Join-Path 'router' 'auth')) {
+foreach ($d in 'bin','config','router','logs','assets',(Join-Path 'router' 'auth')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Root $d) | Out-Null
 }
 
@@ -74,6 +74,10 @@ if (-not ((Test-Path $installedExe) -and (Get-FileHash $installedExe -Algorithm 
 }
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.ps1') (Join-Path $Root 'bin\claude-fife.ps1') -Force
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.cmd') (Join-Path $Root 'bin\claude-fife.cmd') -Force
+# The startup symbol: the renderer goes next to the launcher, the art into
+# assets\ so the launcher can preview it without touching the repo.
+Copy-Item (Join-Path $fifeSrc 'tools\Show-ClaudeSymbol.ps1') (Join-Path $Root 'bin\Show-ClaudeSymbol.ps1') -Force
+Copy-Item (Join-Path $fifeSrc 'assets\claude-symbol.ans') (Join-Path $Root 'assets\claude-symbol.ans') -Force
 
 # 3. Settings (create once; never overwrite user edits). Keys the template adds
 # later (currently the background-by-default env block) are merged into an
