@@ -7,6 +7,9 @@ function Check([string]$name, [scriptblock]$sb) {
     catch { $checks.Add("FAIL $name - $($_.Exception.Message)") }
 }
 $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')
+# Keep the acceptance gauntlet offline and deterministic; the upstream check
+# has its own tests in Test-Launcher.ps1.
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '0'
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $tests = Join-Path $repo 'tests'
 

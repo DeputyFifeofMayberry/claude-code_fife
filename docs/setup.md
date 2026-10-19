@@ -77,6 +77,40 @@ Applying a fork release means downloading and verifying the asset, then running
 its `fife\setup.ps1`. A release that moves the engine pin also needs the
 re-pin steps below.
 
+## Upstream Claude Code check (report only)
+
+Fife pins the engine, so upstream releases do not arrive on their own. On every
+interactive launch the launcher reads Anthropic's latest release and GitHub's
+fork-vs-upstream compare, then prints one line:
+
+- green when nothing is pending:
+  `claude-fife: upstream 2.1.303 - current (engine 2.1.303).`
+- yellow when the fork is behind, naming the pinned and upstream versions, the
+  upstream commits not yet merged, and up to five `CHANGELOG.md` bullets.
+
+The check reports only; it never downloads, merges, or installs anything. It is
+silent when a feed cannot be read, and it does not block the launch. `-p` and
+`--print` runs skip it unless `CLAUDE_FIFE_UPSTREAM_CHECK=1`; `--version`,
+`update`, `upgrade`, `install`, and `claude-fife upstream` never run the launch
+check.
+
+`claude-fife upstream` prints the full picture on demand: installed build,
+pinned engine, upstream release and date, how far the fork is ahead/behind,
+the unmerged commits (first 20), the changed files (first 10), changelog
+highlights, and the merge/re-pin commands when there is anything to apply. It
+ends with `This command changed nothing.` and exits 1 only when the feeds
+cannot be read.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `CLAUDE_FIFE_UPSTREAM_CHECK` | on | `0` silences the launch check; `1` forces it even for `-p` |
+| `CLAUDE_FIFE_UPSTREAM_API` | `.../anthropics/claude-code/releases/latest` | release JSON URL or local file |
+| `CLAUDE_FIFE_UPSTREAM_COMPARE_API` | `.../<fork>/compare/main...anthropics:main:main` | compare JSON URL or local file |
+| `CLAUDE_FIFE_UPSTREAM_TIMEOUT_SEC` | `3` | timeout for each request |
+
+GitHub's anonymous API allows 60 requests per hour per address; a failed or
+malformed lookup is silent. Merging and re-pinning remain deliberate steps.
+
 ## Deliberate re-pin (moving to a newer engine, by hand)
 
 1. Edit `fife\tools\Get-PinnedEngine.ps1` `$Version` (and the exe name in
@@ -124,6 +158,8 @@ again afterward.
 ## Known limitations (accepted in the design)
 
 - **Pin forever**: upstream security fixes do not arrive until you re-pin.
+  The launch check reports upstream drift, but nothing is merged or re-pinned
+  automatically.
 - **Shared project files**: `claude-fife` reads each project's `CLAUDE.md`
   and project `.claude\settings.json` like real Claude Code (shared with any
   other tool); all state/history/credentials are fife-only under

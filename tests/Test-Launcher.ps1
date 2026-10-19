@@ -1,5 +1,8 @@
 #Requires -Version 7.0
 $ErrorActionPreference = 'Stop'
+# The launch-time upstream check is exercised separately below; keep every
+# other case offline and fast.
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '0'
 $failures = @()
 function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 
@@ -179,6 +182,114 @@ $installOut = & pwsh -NoProfile -File $launcherPs1 install latest 2>&1 | Out-Str
 Assert ($LASTEXITCODE -eq 1) "install should be blocked, got $LASTEXITCODE"
 Assert ($installOut -match 'engine installer is disabled') "install block message missing: $installOut"
 Assert (-not (Test-Path $env:STUB_OUT)) 'install reached the engine'
+
+# Upstream Claude Code check (report-only) and its `upstream` verb.
+$fixtures = Join-Path $repo 'tests\fixtures\upstream'
+$releaseFixture = Join-Path $fixtures 'release-2.1.303.json'
+$compareDiverged = Join-Path $fixtures 'compare-diverged.json'
+$compareIdentical = Join-Path $fixtures 'compare-identical.json'
+$malformedFixture = Join-Path $fixtures 'malformed.json'
+$fakeRoot = $env:CLAUDE_FIFE_ROOT
+New-Item -ItemType Directory -Force -Path (Join-Path $fakeRoot 'config') | Out-Null
+$env:CLAUDE_FIFE_ROUTER_EXE = Join-Path $tmp 'no-router.exe'
+Remove-Item Env:CLAUDE_FIFE_UPSTREAM_CHECK -ErrorAction SilentlyContinue
+$env:CLAUDE_FIFE_UPSTREAM_API = $releaseFixture
+$env:CLAUDE_FIFE_UPSTREAM_COMPARE_API = $compareDiverged
+$env:CLAUDE_FIFE_ENGINE_PATH = $stub
+$env:CLAUDE_FIFE_ENGINE_VERSION = '2.1.302'
+Set-Content (Join-Path $fakeRoot 'config\fife-version.txt') '2.1.302r4' -Encoding UTF8 -NoNewline
+
+# 1. Behind: yellow notice, engine still starts, exit code propagates.
+$env:STUB_OUT = Join-Path $tmp 'out-upstream1.json'
+$behindOut = & pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 7) "upstream-check launch exit code wrong: $LASTEXITCODE"
+Assert ($behindOut -match 'upstream Claude Code update available') "behind notice missing: $behindOut"
+Assert ($behindOut -match 'pinned engine: 2\.1\.302') "pinned engine missing: $behindOut"
+Assert ($behindOut -match 'upstream latest: 2\.1\.303') "upstream version missing: $behindOut"
+Assert ($behindOut -match '1 upstream commit\(s\) not merged') "fork sync count missing: $behindOut"
+Assert ($behindOut -match 'Fixed the thing everyone asked about') "changelog bullet missing: $behindOut"
+Assert ($behindOut -match 'claude-fife upstream') "details hint missing: $behindOut"
+Assert (Test-Path $env:STUB_OUT) 'engine was not started after the upstream notice'
+
+# 2. Current: one green line, no update notice.
+Set-Content (Join-Path $fakeRoot 'config\fife-version.txt') '2.1.303r1' -Encoding UTF8 -NoNewline
+$env:CLAUDE_FIFE_ENGINE_VERSION = '2.1.303'
+$env:CLAUDE_FIFE_UPSTREAM_COMPARE_API = $compareIdentical
+$env:STUB_OUT = Join-Path $tmp 'out-upstream2.json'
+$currentOut = & pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 7) "current-check launch exit code wrong: $LASTEXITCODE"
+Assert ($currentOut -match 'claude-fife: upstream 2\.1\.303 - current \(engine 2\.1\.303\)') "current line missing: $currentOut"
+Assert ($currentOut -notmatch 'update available') "false update notice: $currentOut"
+Set-Content (Join-Path $fakeRoot 'config\fife-version.txt') '2.1.302r4' -Encoding UTF8 -NoNewline
+$env:CLAUDE_FIFE_ENGINE_VERSION = '2.1.302'
+$env:CLAUDE_FIFE_UPSTREAM_COMPARE_API = $compareDiverged
+
+# 3. Missing or malformed feeds: silent, engine still starts.
+$env:CLAUDE_FIFE_UPSTREAM_API = $malformedFixture
+$env:STUB_OUT = Join-Path $tmp 'out-upstream3.json'
+$silentOut = & pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 7) "malformed-feed exit code wrong: $LASTEXITCODE"
+Assert ($silentOut -notmatch 'upstream Claude Code') "malformed feed produced a notice: $silentOut"
+Assert (Test-Path $env:STUB_OUT) 'engine not started after malformed feed'
+
+# 4. `upstream` verb: details, nothing changed, engine never started; exit 1
+# when the feed cannot be read.
+$env:CLAUDE_FIFE_UPSTREAM_API = $releaseFixture
+$env:STUB_OUT = Join-Path $tmp 'out-upstream-verb.json'
+$verbOut = & pwsh -NoProfile -File $launcherPs1 upstream 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 0) "upstream verb exit code wrong: $LASTEXITCODE"
+Assert ($verbOut -match 'upstream:\s+2\.1\.303') "verb upstream version missing: $verbOut"
+Assert ($verbOut -match '21 ahead / 1 behind upstream') "verb fork sync missing: $verbOut"
+Assert ($verbOut -match 'ef7bfdc') "verb missing commit sha: $verbOut"
+Assert ($verbOut -match 'CHANGELOG\.md') "verb changed files missing: $verbOut"
+Assert ($verbOut -match 'git fetch https://github\.com/anthropics/claude-code\.git main') "verb apply block missing: $verbOut"
+Assert ($verbOut -match 'This command changed nothing') "verb must state nothing changed: $verbOut"
+Assert (-not (Test-Path $env:STUB_OUT)) 'upstream verb reached the engine'
+$env:CLAUDE_FIFE_UPSTREAM_API = Join-Path $tmp 'missing-upstream.json'
+$verbMissing = & pwsh -NoProfile -File $launcherPs1 upstream 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 1) "unreachable upstream verb should exit 1, got $LASTEXITCODE"
+Assert ($verbMissing -match 'could not read') "unreachable message missing: $verbMissing"
+
+# 5. --version/update/upgrade/install never run the check, even when forced.
+$env:CLAUDE_FIFE_UPSTREAM_API = $releaseFixture
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '1'
+foreach ($verb in '--version', 'install') {
+    $o = & pwsh -NoProfile -File $launcherPs1 $verb 2>&1 | Out-String
+    Assert ($o -notmatch 'upstream Claude Code update available') "$verb ran the upstream check: $o"
+}
+$env:CLAUDE_FIFE_RELEASES_API = $feed
+$o = & pwsh -NoProfile -File $launcherPs1 update 2>&1 | Out-String
+Assert ($o -notmatch 'upstream Claude Code update available') "update ran the upstream check: $o"
+
+# 6. -p/--print skips the check; CLAUDE_FIFE_UPSTREAM_CHECK=1 forces it on.
+Remove-Item Env:CLAUDE_FIFE_UPSTREAM_CHECK -ErrorAction SilentlyContinue
+$env:STUB_OUT = Join-Path $tmp 'out-print.json'
+$printOut = & pwsh -NoProfile -File $launcherPs1 -p hello 2>&1 | Out-String
+Assert ($printOut -notmatch 'upstream Claude Code update available') "-p ran the upstream check: $printOut"
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '1'
+$forcedOut = & pwsh -NoProfile -File $launcherPs1 -p hello 2>&1 | Out-String
+Assert ($forcedOut -match 'upstream Claude Code update available') "=1 did not force the check under -p: $forcedOut"
+
+# 7. dev-<commit> falls back to the engine version; =0 silences the launch
+# check but not the verb.
+Remove-Item Env:CLAUDE_FIFE_UPSTREAM_CHECK -ErrorAction SilentlyContinue
+Set-Content (Join-Path $fakeRoot 'config\fife-version.txt') 'dev-b203f9d' -Encoding UTF8 -NoNewline
+$devFallback = & pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String
+Assert ($devFallback -match 'pinned engine: 2\.1\.302') "dev fallback not used: $devFallback"
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '0'
+$offOut = & pwsh -NoProfile -File $launcherPs1 2>&1 | Out-String
+Assert ($offOut -notmatch 'upstream Claude Code') "=0 did not silence the launch check: $offOut"
+$offVerb = & pwsh -NoProfile -File $launcherPs1 upstream 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 0 -and $offVerb -match 'upstream:\s+2\.1\.303') "=0 silenced the upstream verb: $offVerb"
+
+# 8. Opt-in live check against the real feeds.
+if ($env:CLAUDE_FIFE_LIVE_TEST -eq '1') {
+    Remove-Item Env:CLAUDE_FIFE_UPSTREAM_API -ErrorAction SilentlyContinue
+    Remove-Item Env:CLAUDE_FIFE_UPSTREAM_COMPARE_API -ErrorAction SilentlyContinue
+    $liveOut = & pwsh -NoProfile -File $launcherPs1 upstream 2>&1 | Out-String
+    Assert ($LASTEXITCODE -eq 0) "live upstream verb failed: $liveOut"
+    Write-Host 'LIVE: upstream check ran against GitHub'
+}
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }

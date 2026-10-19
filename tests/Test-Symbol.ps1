@@ -2,6 +2,8 @@
 # The claude-fife startup symbol: the installed ANSI art and the launcher hook
 # that shows it for interactive sessions.
 $ErrorActionPreference = 'Stop'
+# Interactive launches would otherwise run the upstream release check.
+$env:CLAUDE_FIFE_UPSTREAM_CHECK = '0'
 $failures = @()
 function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 

@@ -245,6 +245,170 @@ function Invoke-FifeUpdate {
     return 0
 }
 
+# The engine is pinned on purpose, so nothing reports upstream drift unless we
+# ask for it. The launch check and the `upstream` verb read Anthropic's latest
+# release plus GitHub's fork-vs-upstream compare; both are report-only.
+function Read-FifeJson([string]$Source, [int]$TimeoutSec = 3) {
+    if (-not $Source) { return $null }
+    if ($Source -match '^https?://') {
+        Invoke-RestMethod -Uri $Source -Headers @{ 'User-Agent' = 'claude-fife-upstream-check'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec $TimeoutSec
+    } else {
+        Get-Content $Source -Raw | ConvertFrom-Json
+    }
+}
+
+function Get-InstalledBaseVersion {
+    $build = Get-FifeBuildId
+    if ($build) {
+        $v = ConvertTo-FifeVersion $build
+        if ($v) { return $v.Base }
+    }
+    $engineVersion = Get-EngineVersion
+    if ($engineVersion -and $engineVersion -match '^\d+(\.\d+){1,3}$') { return [version]$engineVersion }
+    return $null
+}
+
+function Get-ChangelogHighlights($Compare) {
+    if (-not $Compare -or -not $Compare.files) { return @() }
+    $file = @($Compare.files | Where-Object { $_.filename -eq 'CHANGELOG.md' }) | Select-Object -First 1
+    if (-not $file -or -not $file.patch) { return @() }
+    $highlights = @()
+    foreach ($line in ($file.patch -split "`n")) {
+        if ($line -match '^\+(?!\+\+)(.+)$') {
+            $text = $Matches[1].Trim()
+            if ($text -match '^#{2,3}\s+(.+)$') { $highlights += $Matches[1].Trim() }
+            elseif ($text -match '^[-*]\s+(.+)$') { $highlights += $Matches[1].Trim() }
+        }
+        if ($highlights.Count -ge 5) { break }
+    }
+    return $highlights
+}
+
+# Returns $null only when neither feed can be read. A failed compare degrades to
+# release-only information; an unreadable installed version only suppresses the
+# version-newer half of the report.
+function Get-UpstreamState {
+    $repoSlug = if ($env:CLAUDE_FIFE_RELEASES_REPO) { $env:CLAUDE_FIFE_RELEASES_REPO } else { 'DeputyFifeofMayberry/claude-code_fife' }
+    $releaseFeed = if ($env:CLAUDE_FIFE_UPSTREAM_API) { $env:CLAUDE_FIFE_UPSTREAM_API } else { 'https://api.github.com/repos/anthropics/claude-code/releases/latest' }
+    $compareFeed = if ($env:CLAUDE_FIFE_UPSTREAM_COMPARE_API) { $env:CLAUDE_FIFE_UPSTREAM_COMPARE_API } else { "https://api.github.com/repos/$repoSlug/compare/main...anthropics:main:main" }
+    $timeout = if ($env:CLAUDE_FIFE_UPSTREAM_TIMEOUT_SEC) { [int]$env:CLAUDE_FIFE_UPSTREAM_TIMEOUT_SEC } else { 3 }
+
+    try { $release = Read-FifeJson $releaseFeed $timeout } catch { return $null }
+    if (-not $release -or -not $release.tag_name) { return $null }
+    $tag = $release.tag_name -replace '^v', ''
+    $upstream = ConvertTo-FifeVersion $tag
+    if (-not $upstream) { return $null }
+
+    $compare = $null
+    try { $compare = Read-FifeJson $compareFeed $timeout } catch { $compare = $null }
+
+    $installed = Get-InstalledBaseVersion
+    $versionNewer = ($installed -and $upstream.Base -gt $installed)
+
+    $missing = 0
+    $forkOnly = 0
+    $commits = @()
+    $files = @()
+    if ($compare) {
+        if ($null -ne $compare.ahead_by) { $missing = [int]$compare.ahead_by }
+        if ($null -ne $compare.behind_by) { $forkOnly = [int]$compare.behind_by }
+        if ($compare.commits) { $commits = @($compare.commits) }
+        if ($compare.files) { $files = @($compare.files) }
+    }
+
+    $published = if ($release.published_at) { ([string]$release.published_at).Substring(0, 10) } else { $null }
+    [pscustomobject]@{
+        Installed       = $installed
+        UpstreamTag     = $tag
+        UpstreamVersion = $upstream.Base
+        UpstreamDate    = $published
+        UpstreamUrl     = $release.html_url
+        CompareUrl      = if ($compare) { "https://github.com/$repoSlug/compare/main...anthropics:main:main" } else { $null }
+        ForkBehind      = $missing
+        ForkAhead       = $forkOnly
+        MissingCommits  = $commits
+        ChangedFiles    = $files
+        Highlights      = @(Get-ChangelogHighlights $compare)
+        VersionNewer    = $versionNewer
+        HasUpdate       = ($versionNewer -or $missing -gt 0)
+    }
+}
+
+function Show-UpstreamNotice($State) {
+    if (-not $State) { return }
+    $engine = if ($State.Installed) { $State.Installed.ToString() } else { 'unknown' }
+    if (-not $State.HasUpdate) {
+        Write-Host "claude-fife: upstream $($State.UpstreamVersion) - current (engine $engine)." -ForegroundColor Green
+        return
+    }
+    Write-Host 'claude-fife: upstream Claude Code update available.' -ForegroundColor Yellow
+    $line = "  pinned engine: $engine    upstream latest: $($State.UpstreamVersion)"
+    if ($State.UpstreamDate) { $line += " ($($State.UpstreamDate))" }
+    Write-Host $line -ForegroundColor Yellow
+    if ($State.ForkBehind -gt 0) {
+        Write-Host "  fork sync:     $($State.ForkBehind) upstream commit(s) not merged yet" -ForegroundColor Yellow
+    }
+    if ($State.Highlights.Count -gt 0) {
+        Write-Host "  what's new in $($State.UpstreamVersion):" -ForegroundColor Yellow
+        foreach ($h in $State.Highlights) { Write-Host "    - $h" -ForegroundColor Yellow }
+    }
+    Write-Host '  Run `claude-fife upstream` for details. Merge + re-pin steps: docs\setup.md.' -ForegroundColor Yellow
+}
+
+function Invoke-FifeUpstream {
+    $state = Get-UpstreamState
+    if (-not $state) {
+        Write-Host 'claude-fife upstream: could not read the upstream release or compare feed.'
+        Write-Host 'Nothing was changed.'
+        return 1
+    }
+
+    $build = Get-FifeBuildId
+    $engineVersion = Get-EngineVersion
+    $shown = if ($build) { $build } elseif ($engineVersion) { "engine $engineVersion (no package version recorded)" } else { 'unknown' }
+    $engine = if ($engineVersion) { $engineVersion } else { 'unknown' }
+
+    Write-Host 'claude-fife upstream'
+    Write-Host "  installed:   $shown"
+    Write-Host "  engine:      $engine (pinned)"
+    Write-Host "  upstream:    $($state.UpstreamVersion) released $($state.UpstreamDate)"
+    Write-Host "  fork sync:   $($state.ForkAhead) ahead / $($state.ForkBehind) behind upstream"
+    if ($state.UpstreamUrl) { Write-Host "  release:     $($state.UpstreamUrl)" }
+    if ($state.CompareUrl) { Write-Host "  compare:     $($state.CompareUrl)" }
+
+    if ($state.MissingCommits.Count -gt 0) {
+        $shownCommits = @($state.MissingCommits | Select-Object -First 20)
+        Write-Host "  upstream commits not merged (first $($shownCommits.Count) of $($state.MissingCommits.Count)):"
+        foreach ($c in $shownCommits) {
+            $sha = if ($c.sha) { $c.sha.Substring(0, [Math]::Min(7, $c.sha.Length)) } else { '???????' }
+            $date = if ($c.commit.author.date) { ([string]$c.commit.author.date).Substring(0, 10) } else { '' }
+            $subject = if ($c.commit.message) { ([string]$c.commit.message -split "`n")[0] } else { '' }
+            Write-Host "    $sha $date $subject"
+        }
+    }
+    if ($state.ChangedFiles.Count -gt 0) {
+        $shownFiles = @($state.ChangedFiles | Select-Object -First 10)
+        Write-Host "  changed files (first $($shownFiles.Count) of $($state.ChangedFiles.Count)):"
+        foreach ($f in $shownFiles) { Write-Host "    $($f.status)`t$($f.filename)" }
+    }
+    if ($state.Highlights.Count -gt 0) {
+        Write-Host "  what's new in $($state.UpstreamVersion):"
+        foreach ($h in $state.Highlights) { Write-Host "    - $h" }
+    }
+
+    if ($state.HasUpdate) {
+        Write-Host 'To apply:'
+        Write-Host '  git fetch https://github.com/anthropics/claude-code.git main'
+        Write-Host '  git merge FETCH_HEAD'
+        Write-Host '  re-pin and rebrand per docs\setup.md'
+        Write-Host '  pwsh fife\setup.ps1; pwsh fife\tools\Test-Acceptance.ps1'
+    } else {
+        Write-Host 'Upstream is current; nothing to merge or re-pin.'
+    }
+    Write-Host 'This command changed nothing.'
+    return 0
+}
+
 if ($args.Count -ge 1 -and $args[0] -match '(?i)^(update|upgrade|install)$') {
     $updateCode = if ($args[0] -match '(?i)^install$') {
         # `install` fetches a native build from upstream into the same
@@ -256,6 +420,12 @@ if ($args.Count -ge 1 -and $args[0] -match '(?i)^(update|upgrade|install)$') {
         Invoke-FifeUpdate
     }
     if ($env:CLAUDE_FIFE_EXIT_WITH_CODE -eq '1') { exit $updateCode }
+    return
+}
+
+if ($args.Count -ge 1 -and $args[0] -match '(?i)^upstream$') {
+    $upstreamCode = Invoke-FifeUpstream
+    if ($env:CLAUDE_FIFE_EXIT_WITH_CODE -eq '1') { exit $upstreamCode }
     return
 }
 
@@ -276,6 +446,18 @@ Show-ClaudeSymbol $args
 Ensure-EnginePin
 Ensure-Router
 Ensure-LabelsProxy
+
+# Report upstream drift on interactive launches. This is the only place fife
+# talks to Anthropic's release channel; it never changes anything, never blocks
+# the launch, and is silent when the feeds cannot be read.
+$nonInteractive = @($args | Where-Object { $_ -match '^(--print|-p)$' }).Count -gt 0
+$checkMode = $env:CLAUDE_FIFE_UPSTREAM_CHECK
+if ($checkMode -ne '0' -and (-not $nonInteractive -or $checkMode -eq '1')) {
+    try {
+        $upstreamState = Get-UpstreamState
+        if ($upstreamState) { Show-UpstreamNotice $upstreamState }
+    } catch { }
+}
 
 $managed = 'CLAUDE_CONFIG_DIR','DISABLE_AUTOUPDATER','DISABLE_UPDATES','ANTHROPIC_BASE_URL','ANTHROPIC_AUTH_TOKEN','CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY'
 $saved = @{}
