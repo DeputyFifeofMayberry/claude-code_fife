@@ -1,8 +1,8 @@
 #Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [string]$Destination = 'C:\Users\barne\claude-fife-backup\claude-2.1.302.exe',
-    [string]$Version = '2.1.302',
+    [string]$Destination = 'C:\Users\barne\claude-fife-backup\claude-2.1.303.exe',
+    [string]$Version = '2.1.303',
     [string]$Platform = 'win32-x64',
     [string]$InstalledFallback = 'C:\Users\barne\.local\bin\claude.exe'
 )
@@ -32,12 +32,13 @@ try {
     $provenance = 'copied-installed'
 }
 
-Copy-Item $source (Join-Path $backupDir 'claude-2.1.302.exe') -Force
-if ($Destination -ne (Join-Path $backupDir 'claude-2.1.302.exe')) {
+$exeName = "claude-$Version.exe"
+Copy-Item $source (Join-Path $backupDir $exeName) -Force
+if ($Destination -ne (Join-Path $backupDir $exeName)) {
     Copy-Item $source $Destination -Force
 }
 
-$exePath = Join-Path $backupDir 'claude-2.1.302.exe'
+$exePath = Join-Path $backupDir $exeName
 $versionOut = (& $exePath --version 2>&1 | Out-String).Trim()
 if ($versionOut -notmatch [regex]::Escape($Version)) { throw "engine --version mismatch: $versionOut" }
 

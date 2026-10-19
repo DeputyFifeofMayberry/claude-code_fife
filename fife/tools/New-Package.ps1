@@ -4,7 +4,7 @@
 # produced by Get-PinnedEngine.ps1.
 [CmdletBinding()]
 param(
-    [string]$Version = '2.1.302r1',
+    [string]$Version = '2.1.303r1',
     [string]$OutputDir = (Join-Path $env:USERPROFILE 'claude-fife-packages')
 )
 $ErrorActionPreference = 'Stop'
@@ -30,8 +30,8 @@ try {
 # claude-fife v$Version
 
 Setup package for claude-fife. The Claude Code engine binary is not bundled.
-``fife\setup.ps1`` installs the pinned, hash-verified engine (2.1.302) from the
-backup produced by ``fife\tools\Get-PinnedEngine.ps1``.
+``fife\setup.ps1`` installs the pinned, hash-verified engine from the backup
+produced by ``fife\tools\Get-PinnedEngine.ps1``.
 
 ## Install
 

@@ -8,7 +8,7 @@ Machine scope: this Windows machine, user `barne` only (by design).
 |---|---|
 | Control-center repo (this repo) | `C:\Users\barne\Source\claude-code_fife` |
 | Fife tree (engine, launchers, config, router) | `C:\Users\barne\claude-fife\` |
-| Pinned engine backup v2.1.302 + hash record | `C:\Users\barne\claude-fife-backup\` |
+| Pinned engine backup v2.1.303 + hash record | `C:\Users\barne\claude-fife-backup\` |
 | `claude-fife` command | `C:\Users\barne\claude-fife\bin\` (on user PATH) |
 | Router OAuth logins (Claude + Codex subscriptions) | `C:\Users\barne\claude-fife\router\auth\` |
 | Router local API key + z.ai key | `C:\Users\barne\claude-fife\router\api-key.txt`, `config.yaml` — never commit, never share |
@@ -113,13 +113,21 @@ malformed lookup is silent. Merging and re-pinning remain deliberate steps.
 
 ## Deliberate re-pin (moving to a newer engine, by hand)
 
-1. Edit `fife\tools\Get-PinnedEngine.ps1` `$Version` (and the exe name in
-   `fife\setup.ps1`) to the new version.
+1. Edit `fife\tools\Get-PinnedEngine.ps1` `$Version` (the backup exe name is
+   derived from it) and the backup exe name in `fife\setup.ps1` to the new
+   version.
 2. Run `pwsh fife\tools\Get-PinnedEngine.ps1` — downloads the new binary,
    verifies it against the official manifest, rewrites the backup + record.
-3. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
+3. Update the banner-version constants in
+   `fife\tools\Invoke-EngineRebrand.ps1` from the new binary: `$tableBase`,
+   `$tableCount`, `$versionIndex`, `$versionHash`, and `$versionText`. For
+   engine 2.1.303 they are `122177408`, `255988`, `11014`, `98 64 da 00`,
+   and `2.1.303`.
+4. Run `pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal -FifeVersion <build>`
+   and confirm the banner version.
+5. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
    (`fife\tools\Test-Acceptance.ps1`).
-4. Commit the version bump (script changes only — never the binary).
+6. Commit the version bump (script changes only — never the binary).
 
 If the fresh download of the pinned version ever becomes unobtainable while
 the current binary still exists, `Get-PinnedEngine.ps1` falls back to copying
@@ -131,11 +139,23 @@ the installed engine and records `Provenance=copied-installed`.
 welcome banner and terminal title are drawn inside the engine binary and read
 `Claude Code`. `fife\tools\Invoke-EngineRebrand.ps1` rewrites those UI labels in
 place (`Claude Code` -> `claude-fife`, 11 bytes for 11 bytes) so the embedded
-JS offsets stay valid; the engine's own version (2.1.302) is untouched.
+JS offsets stay valid.
+
+The banner also shows the engine version (`v2.1.303`). The tool retitles that
+to the fife build, taken from `config\fife-version.txt` in the installed tree
+(or `-FifeVersion`), so the banner reads `claude-fife v2.1.303r1`.
 
 ```powershell
 pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal
+pwsh fife\tools\Invoke-EngineRebrand.ps1 -FifeVersion 2.1.303r1   # explicit
 ```
+
+The version lives in the bytecode string table: a u32 count, one u32 offset
+per string, then the packed entries. Growing the version entry moves the
+strings after it, so the tool shifts them, adds the same amount to their
+offsets, and shortens one later message by the same number of bytes so the
+table keeps its exact size. The table position and count are pinned to
+engine 2.1.303; the tool refuses to patch when they differ.
 
 The tool refuses to patch unless the pinned engine contains the expected
 occurrence counts (7 welcome banners, 3 header labels, 1 notification title,
@@ -146,7 +166,8 @@ bytecode string table; that entry is patched too (its length and hash bytes
 stay intact, as the welcome entry demonstrates the runtime does not revalidate
 them for value strings).
 It records `Provenance=patched-rebrand`, the patched `SHA256`, the now
-`HashMismatch` signature, and the upstream hash/signature alongside.
+`HashMismatch` signature, the `BannerVersion`, and the upstream hash/signature
+alongside.
 
 A running engine locks its file on Windows, so run setup with claude-fife
 closed. Otherwise the next launch's pin sync (`Ensure-EnginePin` in the

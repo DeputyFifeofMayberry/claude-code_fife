@@ -4,7 +4,7 @@ $failures = @()
 function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 
 $backupDir = 'C:\Users\barne\claude-fife-backup'
-$exe = Join-Path $backupDir 'claude-2.1.302.exe'
+$exe = Join-Path $backupDir 'claude-2.1.303.exe'
 $record = Join-Path $backupDir 'SHA256.txt'
 
 Assert (Test-Path $exe) "backup exe missing: $exe"
@@ -23,7 +23,7 @@ if (Test-Path $record) {
         Assert ($kv.UpstreamSHA256 -match '^[0-9A-Fa-f]{64}$') 'UpstreamSHA256 not recorded for rebranded engine'
         Assert (-not [string]::IsNullOrWhiteSpace($kv.UpstreamSignatureStatus)) 'UpstreamSignatureStatus not recorded'
     }
-    Assert ($kv.Version -eq '2.1.302') "Version not recorded as 2.1.302: $($kv.Version)"
+    Assert ($kv.Version -eq '2.1.303') "Version not recorded as 2.1.303: $($kv.Version)"
     if (Test-Path $exe) {
         $actual = (Get-FileHash $exe -Algorithm SHA256).Hash
         Assert ($actual -eq $kv.SHA256) 'exe hash does not match record'
@@ -32,7 +32,7 @@ if (Test-Path $record) {
 
 if (Test-Path $exe) {
     $version = (& $exe --version 2>&1 | Out-String).Trim()
-    Assert ($version -match '2\.1\.302') "engine --version not 2.1.302: $version"
+    Assert ($version -match '2\.1\.303') "engine --version not 2.1.303: $version"
 }
 
 if ($failures.Count) {
