@@ -88,6 +88,16 @@ function Ensure-EnginePin {
     }
 }
 
+# An image swapped in while sessions were open stays locked until every process
+# that mapped it exits. Remove stale images on each launch; a file that is still
+# locked is simply retried on the next one.
+function Remove-StaleEngineImages {
+    if ($env:CLAUDE_FIFE_ENGINE_PATH) { return }  # explicit override: not our tree
+    foreach ($f in Get-ChildItem (Split-Path -Parent $engine) -Filter 'claude-fife-engine.exe.old-*' -File -ErrorAction SilentlyContinue) {
+        try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop } catch { }
+    }
+}
+
 function Ensure-Router {
     if (-not (Test-Path $routerExe)) { return }
     if (-not (Test-Path $routerCfg)) {
@@ -476,6 +486,7 @@ if (-not (Test-Path $engine)) {
 
 Show-ClaudeSymbol $args
 Ensure-EnginePin
+Remove-StaleEngineImages
 Ensure-Router
 Ensure-LabelsProxy
 

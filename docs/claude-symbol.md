@@ -97,9 +97,8 @@ The patcher updates the pin record's `SHA256` and adds
 signature lines as provenance. Running sessions do not block the new pin:
 `Ensure-EnginePin` in the launcher renames the in-use engine aside and installs
 the patched build at the canonical path, so it applies on the next launch.
-Sessions already open keep the renamed image until they exit; the
-`claude-fife-engine.exe.old-*` files next to `bin\` can be deleted once no
-session is running.
+Sessions already open keep the renamed image until they exit; after that, the
+launcher removes the leftover `claude-fife-engine.exe.old-*` image.
 
 ## Updating the art
 

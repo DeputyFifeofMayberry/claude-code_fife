@@ -316,13 +316,22 @@ try {
     & pwsh -NoProfile -File $launcherPs1 --help 2>&1 | Out-Null
     Assert ((Get-FileHash $pinEngine -Algorithm SHA256).Hash -eq $pinHash) 'pin not installed while the old engine was open'
     $asides = @(Get-ChildItem (Join-Path $pinRootDir 'bin') -Filter 'claude-fife-engine.exe.old-*')
-    Assert ($asides.Count -eq 1) "expected one renamed old image, found $($asides.Count)"
+    # A real image section blocks deletion but allows the rename; a plain
+    # share-delete handle blocks the overwrite but not a later delete, so the
+    # same launch may already have cleaned the renamed image up.
+    Assert ($asides.Count -le 1) "expected at most one renamed old image, found $($asides.Count)"
     if ($asides.Count -eq 1) {
         Assert ((Get-FileHash $asides[0].FullName -Algorithm SHA256).Hash -eq $oldHash) 'renamed image is not the old engine'
     }
 } finally {
     $lock.Dispose()
 }
+
+# 10. A stale image that nothing holds is removed on the next launch.
+$stale = Join-Path $pinRootDir 'bin\claude-fife-engine.exe.old-stale'
+Set-Content -LiteralPath $stale -Value 'stale' -Encoding ASCII
+& pwsh -NoProfile -File $launcherPs1 --help 2>&1 | Out-Null
+Assert (-not (Test-Path -LiteralPath $stale)) 'unlocked stale engine image was not removed on the next launch'
 
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
