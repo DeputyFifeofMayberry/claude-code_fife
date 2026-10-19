@@ -16,8 +16,13 @@ if (Test-Path $record) {
         if ($line -match '^([^=]+)=(.*)$') { $kv[$Matches[1]] = $Matches[2] }
     }
     Assert ($kv.ContainsKey('SHA256') -and $kv.SHA256 -match '^[0-9A-Fa-f]{64}$') 'SHA256 missing/malformed in record'
-    Assert ($kv.Provenance -in @('fresh-download','copied-installed')) "Provenance missing/invalid: $($kv.Provenance)"
+    Assert ($kv.Provenance -in @('fresh-download','copied-installed','patched-rebrand')) "Provenance missing/invalid: $($kv.Provenance)"
     Assert (-not [string]::IsNullOrWhiteSpace($kv.SignatureStatus)) 'SignatureStatus not recorded'
+    if ($kv.Provenance -eq 'patched-rebrand') {
+        Assert (-not [string]::IsNullOrWhiteSpace($kv.Rebrand)) 'Rebrand label not recorded'
+        Assert ($kv.UpstreamSHA256 -match '^[0-9A-Fa-f]{64}$') 'UpstreamSHA256 not recorded for rebranded engine'
+        Assert (-not [string]::IsNullOrWhiteSpace($kv.UpstreamSignatureStatus)) 'UpstreamSignatureStatus not recorded'
+    }
     Assert ($kv.Version -eq '2.1.302') "Version not recorded as 2.1.302: $($kv.Version)"
     if (Test-Path $exe) {
         $actual = (Get-FileHash $exe -Algorithm SHA256).Hash

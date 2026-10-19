@@ -66,7 +66,7 @@ Set-Content (Join-Path $tmp 'router.yaml') 'stub' -Encoding ASCII
 $env:CLAUDE_FIFE_ROUTER_EXE = $routerStub
 $env:CLAUDE_FIFE_ROUTER_CONFIG = Join-Path $tmp 'router.yaml'
 $env:STUB_OUT = Join-Path $tmp 'out3.json'
-& pwsh -NoProfile -File $launcherPs1 --version
+& pwsh -NoProfile -File $launcherPs1 --help
 Assert (Test-Path $marker) 'router was not started when unhealthy'
 
 # (e2) router NOT started when healthy (something already listening)
@@ -76,7 +76,7 @@ if ($py) {
     $srv = Start-Process -FilePath $py -ArgumentList '-m','http.server','8399','--bind','127.0.0.1' -PassThru -WindowStyle Hidden
     Start-Sleep -Seconds 2
     $env:STUB_OUT = Join-Path $tmp 'out4.json'
-    & pwsh -NoProfile -File $launcherPs1 --version
+    & pwsh -NoProfile -File $launcherPs1 --help
     Assert (-not (Test-Path $marker)) 'router started even though port was healthy'
     Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue
 } else {
@@ -90,9 +90,23 @@ $env:CLAUDE_FIFE_ENGINE_PATH = $stubCmd
 $env:CLAUDE_FIFE_EXIT_WITH_CODE = '0'
 $beforeEnv = @{ CLAUDE_CONFIG_DIR = $env:CLAUDE_CONFIG_DIR; ANTHROPIC_BASE_URL = $env:ANTHROPIC_BASE_URL }
 $env:CLAUDE_CONFIG_DIR = 'ORIGINAL-VALUE'
-& $launcherPs1 --version
+& $launcherPs1 --help
 Assert ($env:CLAUDE_CONFIG_DIR -eq 'ORIGINAL-VALUE') 'launcher leaked CLAUDE_CONFIG_DIR into calling shell'
 Assert ($env:ANTHROPIC_BASE_URL -eq $beforeEnv.ANTHROPIC_BASE_URL) 'launcher leaked ANTHROPIC_BASE_URL into calling shell'
+
+# (g) --version names the fife build, not upstream Claude Code, and never
+# reaches the engine.
+$fakeRoot = $env:CLAUDE_FIFE_ROOT
+New-Item -ItemType Directory -Force -Path (Join-Path $fakeRoot 'config') | Out-Null
+Set-Content (Join-Path $fakeRoot 'config\fife-version.txt') '2.1.302r1' -Encoding UTF8 -NoNewline
+$env:CLAUDE_FIFE_ENGINE_VERSION = '2.1.302'
+$env:STUB_OUT = Join-Path $tmp 'out-version.json'
+$versionOut = & pwsh -NoProfile -File $launcherPs1 --version 2>&1 | Out-String
+Assert ($LASTEXITCODE -eq 0) "version exit code wrong: $LASTEXITCODE"
+Assert ($versionOut -match 'claude-fife 2\.1\.302r1') "fife build not named: $versionOut"
+Assert ($versionOut -match 'Claude Code engine 2\.1\.302') "engine version not shown: $versionOut"
+Assert (-not (Test-Path $env:STUB_OUT)) '--version reached the engine'
+Remove-Item Env:CLAUDE_FIFE_ENGINE_VERSION -ErrorAction SilentlyContinue
 
 # (f) update/upgrade are answered from the fork release; the verb never reaches
 # the engine (whose updater would install upstream Claude Code outside the tree).

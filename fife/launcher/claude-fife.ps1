@@ -17,6 +17,7 @@ $labelsFile  = Join-Path $root 'config\model-labels.json'
 $labelsPort  = if ($env:CLAUDE_FIFE_LABELS_PORT) { [int]$env:CLAUDE_FIFE_LABELS_PORT } else { 8319 }
 $labelsUrl   = "http://127.0.0.1:$labelsPort"
 $keyFile    = Join-Path $root 'router\api-key.txt'
+$backupDir  = if ($env:CLAUDE_FIFE_BACKUP_DIR) { $env:CLAUDE_FIFE_BACKUP_DIR } else { 'C:\Users\barne\claude-fife-backup' }
 $waitSec    = if ($env:CLAUDE_FIFE_ROUTER_WAIT_SEC) { [int]$env:CLAUDE_FIFE_ROUTER_WAIT_SEC } else { 15 }
 
 function Test-RouterHealth {
@@ -28,6 +29,30 @@ function Test-RouterHealth {
     } catch {
         if ($_.Exception.Response) { return $true }  # any HTTP answer = server up
         return $false
+    }
+}
+
+# The engine is a pinned, hash-verified file. When the pin is rebuilt (for
+# example by a rebrand patch) but this tree still holds the old binary, install
+# the pin before launching. A running engine locks its file, so a failure here
+# is expected while another session is open; the next launch retries.
+function Ensure-EnginePin {
+    if ($env:CLAUDE_FIFE_ENGINE_PATH) { return }  # explicit override: never replace it
+    $recordFile = Join-Path $backupDir 'SHA256.txt'
+    if (-not (Test-Path $recordFile) -or -not (Test-Path $engine)) { return }
+    $record = @{}
+    foreach ($line in Get-Content $recordFile) {
+        if ($line -match '^([^=]+)=(.*)$') { $record[$Matches[1]] = $Matches[2] }
+    }
+    if (-not $record.SHA256 -or -not $record.Version) { return }
+    $pinExe = Join-Path $backupDir "claude-$($record.Version).exe"
+    if (-not (Test-Path $pinExe)) { return }
+    if ((Get-FileHash $engine -Algorithm SHA256).Hash -eq $record.SHA256) { return }
+    try {
+        Copy-Item $pinExe $engine -Force -ErrorAction Stop
+        Write-Host 'claude-fife: installed pinned engine build.'
+    } catch {
+        Write-Warning 'claude-fife: engine pin update pending (binary in use); it will apply on the next launch.'
     }
 }
 
@@ -103,6 +128,32 @@ function Compare-FifeVersion([string]$Left, [string]$Right) {
     return 0
 }
 
+function Get-FifeBuildId {
+    $versionFile = Join-Path $root 'config\fife-version.txt'
+    if (Test-Path $versionFile) { return (Get-Content $versionFile -Raw).Trim() }
+    return $null
+}
+
+function Get-EngineVersion {
+    if ($env:CLAUDE_FIFE_ENGINE_VERSION) { return $env:CLAUDE_FIFE_ENGINE_VERSION }
+    if (Test-Path $engine) {
+        $vout = (& $engine --version 2>$null | Out-String).Trim()
+        if ($vout -match '(\d+\.\d+\.\d+)') { return $Matches[1] }
+    }
+    return $null
+}
+
+# The engine prints its own upstream identity (`2.1.302 (Claude Code)`). A fife
+# install names the fife build first and keeps the engine version alongside, so
+# `claude-fife --version` answers for the tree that is actually running.
+function Show-FifeVersion {
+    $build = Get-FifeBuildId
+    $engineVersion = Get-EngineVersion
+    $buildPart = if ($build) { $build } else { 'build unrecorded' }
+    $enginePart = if ($engineVersion) { "Claude Code engine $engineVersion" } else { 'engine version unknown' }
+    Write-Output "claude-fife $buildPart ($enginePart)"
+}
+
 function Show-FifeRelease($Release, $Asset) {
     if ($Release.body -and $Release.body -match '(?i)Claude Code (\d+\.\d+\.\d+)') {
         Write-Host "  engine pin:  $($Matches[1])"
@@ -119,14 +170,8 @@ function Invoke-FifeUpdate {
     $repoSlug = if ($env:CLAUDE_FIFE_RELEASES_REPO) { $env:CLAUDE_FIFE_RELEASES_REPO } else { 'DeputyFifeofMayberry/claude-code_fife' }
     $feed = if ($env:CLAUDE_FIFE_RELEASES_API) { $env:CLAUDE_FIFE_RELEASES_API } else { "https://api.github.com/repos/$repoSlug/releases/latest" }
 
-    $installed = $null
-    $versionFile = Join-Path $root 'config\fife-version.txt'
-    if (Test-Path $versionFile) { $installed = (Get-Content $versionFile -Raw).Trim() }
-    $engineVersion = if ($env:CLAUDE_FIFE_ENGINE_VERSION) { $env:CLAUDE_FIFE_ENGINE_VERSION } else { $null }
-    if (-not $engineVersion -and (Test-Path $engine)) {
-        $vout = (& $engine --version 2>$null | Out-String).Trim()
-        if ($vout -match '(\d+\.\d+\.\d+)') { $engineVersion = $Matches[1] }
-    }
+    $installed = Get-FifeBuildId
+    $engineVersion = Get-EngineVersion
 
     try {
         $release = if ($feed -match '^https?://') {
@@ -193,11 +238,20 @@ if ($args.Count -ge 1 -and $args[0] -match '(?i)^(update|upgrade|install)$') {
     return
 }
 
+# The engine's `--version` reports upstream Claude Code. Answer it here so the
+# command names the fife build, while still carrying the engine version.
+if ($args.Count -ge 1 -and $args[0] -match '^(--version|-v|-V)$') {
+    Show-FifeVersion
+    if ($env:CLAUDE_FIFE_EXIT_WITH_CODE -eq '1') { exit 0 }
+    return
+}
+
 if (-not (Test-Path $engine)) {
     Write-Error "claude-fife engine not found: $engine (run fife\setup.ps1)"
     exit 1
 }
 
+Ensure-EnginePin
 Ensure-Router
 Ensure-LabelsProxy
 

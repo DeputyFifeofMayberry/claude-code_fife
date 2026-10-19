@@ -10,8 +10,8 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path','User') + ';' + [Enviro
 $repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $tests = Join-Path $repo 'tests'
 
-Check '1a version via PATH (PowerShell)' { (claude-fife --version 2>&1 | Out-String).Trim() -match '2\.1\.302' }
-Check '1b version via cmd' { (cmd /c 'claude-fife --version' 2>&1 | Out-String).Trim() -match '2\.1\.302' }
+Check '1a version via PATH (PowerShell)' { $v = (claude-fife --version 2>&1 | Out-String).Trim(); $v -match '^claude-fife ' -and $v -match '2\.1\.302' }
+Check '1b version via cmd' { $v = (cmd /c 'claude-fife --version' 2>&1 | Out-String).Trim(); $v -match '^claude-fife ' -and $v -match '2\.1\.302' }
 Check '1c help works' { ((claude-fife --help 2>&1 | Out-String)) -match 'Usage|claude' }
 Check '2a anthropic backend prompt' {
     $env:CLAUDE_FIFE_EXIT_WITH_CODE = '1'
