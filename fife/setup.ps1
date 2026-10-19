@@ -62,7 +62,7 @@ Set-Content (Join-Path $Root 'config\fife-version.txt') $PackageVersion -Encodin
 # 2. Engine from verified backup + launchers
 $engineBackup = if ($EngineBackupDir) { $EngineBackupDir } else { $BackupDir }
 $recordFile = Join-Path $engineBackup 'SHA256.txt'
-$backupExe = Join-Path $engineBackup 'claude-2.1.302.exe'
+$backupExe = Join-Path $engineBackup 'claude-2.1.303.exe'
 if (-not (Test-Path $backupExe)) { throw "Pinned engine backup missing: $backupExe (run fife\tools\Get-PinnedEngine.ps1)" }
 $expectedHash = ((Get-Content $recordFile | Where-Object { $_ -like 'SHA256=*' }) -split '=',2)[1]
 if ((Get-FileHash $backupExe -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Backup engine hash mismatch - refusing to install.' }

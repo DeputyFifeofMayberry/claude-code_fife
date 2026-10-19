@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $failures = @()
 function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 
-$engine = 'C:\Users\barne\claude-fife-backup\claude-2.1.302.exe'
+$engine = 'C:\Users\barne\claude-fife-backup\claude-2.1.303.exe'
 $fifeRoot = 'C:\Users\barne\claude-fife'
 $configDir = Join-Path $fifeRoot 'config'
 
