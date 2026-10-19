@@ -37,8 +37,13 @@ screen, and the installed `fife-symbol` mod draws the same art inside the
 session, in the band above the prompt, until the first prompt is submitted.
 Non-interactive runs (`-p`, `--help`, redirected output) stay byte-clean;
 `CLAUDE_FIFE_SYMBOL=never` turns the symbol off and
-`CLAUDE_FIFE_SYMBOL=always` keeps it in the band for the whole session. See
-`docs\claude-symbol.md` for how to update the art.
+`CLAUDE_FIFE_SYMBOL=always` keeps it in the band for the whole session.
+
+New sessions also draw a 9x3 corner mark derived from the art at the top left,
+beside the version. It lives in the pinned engine's compiled glyph table, so
+it is applied with `fife\tools\Invoke-EngineSymbol.ps1` (after
+`Invoke-EngineRebrand.ps1`), pinned to engine 2.1.303. See
+`docs\claude-symbol.md` for the patch, the entries and how to update the art.
 
 ## Fresh setup (this machine, after the fife tree is deleted)
 
