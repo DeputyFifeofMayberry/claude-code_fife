@@ -80,6 +80,119 @@ function Ensure-LabelsProxy {
 
 $script:baseUrl = $routerUrl
 
+# `update` and `upgrade` are engine verbs that install upstream Claude Code into
+# the native-install directory (C:\Users\<user>\.local\bin\claude.exe), outside
+# the fife tree, and ignore DISABLE_AUTOUPDATER. Fife versions come only from
+# the fork's GitHub releases, so these verbs are answered here and never
+# forwarded to the engine.
+function ConvertTo-FifeVersion([string]$Text) {
+    $m = [regex]::Match($Text, '^(?:v)?(\d+(?:\.\d+){1,3})(?:r(\d+))?$')
+    if (-not $m.Success) { return $null }
+    [pscustomobject]@{
+        Base = [version]$m.Groups[1].Value
+        Rev  = if ($m.Groups[2].Success) { [int]$m.Groups[2].Value } else { 0 }
+    }
+}
+
+function Compare-FifeVersion([string]$Left, [string]$Right) {
+    $l = ConvertTo-FifeVersion $Left
+    $r = ConvertTo-FifeVersion $Right
+    if (-not $l -or -not $r) { return $null }
+    if ($l.Base -ne $r.Base) { if ($l.Base -lt $r.Base) { return -1 } else { return 1 } }
+    if ($l.Rev -ne $r.Rev) { if ($l.Rev -lt $r.Rev) { return -1 } else { return 1 } }
+    return 0
+}
+
+function Show-FifeRelease($Release, $Asset) {
+    if ($Release.body -and $Release.body -match '(?i)Claude Code (\d+\.\d+\.\d+)') {
+        Write-Host "  engine pin:  $($Matches[1])"
+    }
+    if ($Asset) {
+        Write-Host "  asset:       $($Asset.name)"
+        if ($Asset.digest -match '^sha256:([0-9a-fA-F]+)$') { Write-Host "  sha256:      $($Matches[1].ToUpper())" }
+        if ($Asset.browser_download_url) { Write-Host "  download:    $($Asset.browser_download_url)" }
+    }
+    Write-Host 'To apply: download the asset, verify its SHA-256, then run pwsh <package>\fife\setup.ps1'
+}
+
+function Invoke-FifeUpdate {
+    $repoSlug = if ($env:CLAUDE_FIFE_RELEASES_REPO) { $env:CLAUDE_FIFE_RELEASES_REPO } else { 'DeputyFifeofMayberry/claude-code_fife' }
+    $feed = if ($env:CLAUDE_FIFE_RELEASES_API) { $env:CLAUDE_FIFE_RELEASES_API } else { "https://api.github.com/repos/$repoSlug/releases/latest" }
+
+    $installed = $null
+    $versionFile = Join-Path $root 'config\fife-version.txt'
+    if (Test-Path $versionFile) { $installed = (Get-Content $versionFile -Raw).Trim() }
+    $engineVersion = if ($env:CLAUDE_FIFE_ENGINE_VERSION) { $env:CLAUDE_FIFE_ENGINE_VERSION } else { $null }
+    if (-not $engineVersion -and (Test-Path $engine)) {
+        $vout = (& $engine --version 2>$null | Out-String).Trim()
+        if ($vout -match '(\d+\.\d+\.\d+)') { $engineVersion = $Matches[1] }
+    }
+
+    try {
+        $release = if ($feed -match '^https?://') {
+            Invoke-RestMethod -Uri $feed -Headers @{ 'User-Agent' = 'claude-fife-update'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 20
+        } else {
+            Get-Content $feed -Raw | ConvertFrom-Json
+        }
+    } catch {
+        Write-Host "claude-fife update: could not read the fork release feed ($feed)."
+        Write-Host 'Nothing was changed. Upstream Claude Code updates are never used.'
+        return 1
+    }
+
+    $tag = $release.tag_name -replace '^v', ''
+    $latest = ConvertTo-FifeVersion $tag
+    $asset = @($release.assets | Where-Object { $_ -and $_.name -like 'claude-fife-*.zip' }) | Select-Object -First 1
+    $shown = if ($installed) { $installed } elseif ($engineVersion) { "engine $engineVersion (no package version recorded)" } else { 'unknown' }
+
+    Write-Host 'claude-fife update'
+    Write-Host "  installed:   $shown"
+    Write-Host "  latest fork: $tag"
+
+    $cmp = if ($installed) { Compare-FifeVersion $installed $tag } else { $null }
+    if ($null -ne $cmp -and $cmp -eq 0) {
+        Write-Host 'Up to date with the latest fork release.'
+    } elseif ($null -ne $cmp -and $cmp -gt 0) {
+        Write-Host 'Installed build is newer than the latest fork release.'
+    } elseif ($null -ne $cmp -and $cmp -lt 0) {
+        Write-Host "A newer fork release is available: $tag"
+        Show-FifeRelease $release $asset
+    } else {
+        $engineCmp = if ($engineVersion -and $latest) { Compare-FifeVersion $engineVersion $latest.Base.ToString() } else { $null }
+        if ($engineCmp -eq 0) {
+            # A repo setup records dev-<commit>; releases name their source commit.
+            $installedCommit = if ($installed -match '^dev-([0-9a-f]{7,40})$') { $Matches[1] } else { $null }
+            $releaseCommit = if ($release.body -match '(?i)Source commit:\s*`?([0-9a-f]{7,40})') { $Matches[1] } else { $null }
+            if ($installedCommit -and $releaseCommit -and $releaseCommit.StartsWith($installedCommit)) {
+                Write-Host "Installed build is based on the latest fork release ($tag, commit $installedCommit)."
+            } elseif ($installedCommit) {
+                Write-Host "Installed engine $engineVersion is current; tree is a dev build at commit $installedCommit (latest release: $tag)."
+            } else {
+                Write-Host "Installed engine $engineVersion matches the latest fork release ($tag); no package revision recorded."
+            }
+        } else {
+            Write-Host 'Installed version could not be compared with the latest fork release.'
+            Show-FifeRelease $release $asset
+        }
+    }
+    Write-Host 'Upstream Claude Code updates are never used; the engine changes only by re-pin (docs\setup.md).'
+    return 0
+}
+
+if ($args.Count -ge 1 -and $args[0] -match '(?i)^(update|upgrade|install)$') {
+    $updateCode = if ($args[0] -match '(?i)^install$') {
+        # `install` fetches a native build from upstream into the same
+        # out-of-tree directory; fife trees come only from fork packages.
+        Write-Host 'claude-fife: the engine installer is disabled. This tree is installed from the fork release package.'
+        Write-Host 'Use fife\setup.ps1 to restore it (see docs\setup.md).'
+        1
+    } else {
+        Invoke-FifeUpdate
+    }
+    if ($env:CLAUDE_FIFE_EXIT_WITH_CODE -eq '1') { exit $updateCode }
+    return
+}
+
 if (-not (Test-Path $engine)) {
     Write-Error "claude-fife engine not found: $engine (run fife\setup.ps1)"
     exit 1
@@ -88,7 +201,7 @@ if (-not (Test-Path $engine)) {
 Ensure-Router
 Ensure-LabelsProxy
 
-$managed = 'CLAUDE_CONFIG_DIR','DISABLE_AUTOUPDATER','ANTHROPIC_BASE_URL','ANTHROPIC_AUTH_TOKEN','CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY'
+$managed = 'CLAUDE_CONFIG_DIR','DISABLE_AUTOUPDATER','DISABLE_UPDATES','ANTHROPIC_BASE_URL','ANTHROPIC_AUTH_TOKEN','CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY'
 $saved = @{}
 foreach ($name in $managed) { $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 
@@ -96,6 +209,9 @@ $code = 1
 try {
     $env:CLAUDE_CONFIG_DIR = $configDir
     $env:DISABLE_AUTOUPDATER = '1'
+    # Blocks `claude update`/`claude install` inside the engine too; the
+    # launcher also intercepts those verbs (see Invoke-FifeUpdate above).
+    $env:DISABLE_UPDATES = '1'
     $env:ANTHROPIC_BASE_URL = $script:baseUrl
     if (Test-Path $keyFile) { $env:ANTHROPIC_AUTH_TOKEN = (Get-Content $keyFile -Raw).Trim() }
     $env:CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1'

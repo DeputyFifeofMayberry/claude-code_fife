@@ -7,6 +7,7 @@ param(
     [string]$BackupDir = 'C:\Users\barne\claude-fife-backup',
     [string]$RouterExeSource = '',
     [string]$EngineBackupDir = '',
+    [string]$PackageVersion = '',
     [switch]$SkipPath
 )
 $ErrorActionPreference = 'Stop'
@@ -41,6 +42,22 @@ function Get-OpenRouterKey {
 foreach ($d in 'bin','config','router','logs',(Join-Path 'router' 'auth')) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Root $d) | Out-Null
 }
+
+# 1b. Package version marker, read by `claude-fife update` to compare this tree
+# with the fork's latest release. Packages carry PACKAGE.md next to fife\; a
+# setup run from the repo is a dev build and says so.
+if (-not $PackageVersion) {
+    $packageMd = Join-Path (Split-Path -Parent $fifeSrc) 'PACKAGE.md'
+    if (Test-Path $packageMd) {
+        $m = [regex]::Match((Get-Content $packageMd -Raw), 'claude-fife v([0-9][^\s]*)')
+        if ($m.Success) { $PackageVersion = $m.Groups[1].Value }
+    }
+}
+if (-not $PackageVersion) {
+    $commit = (& git -C $fifeSrc rev-parse --short HEAD 2>$null | Out-String).Trim()
+    $PackageVersion = if ($commit) { "dev-$commit" } else { 'dev' }
+}
+Set-Content (Join-Path $Root 'config\fife-version.txt') $PackageVersion -Encoding UTF8 -NoNewline
 
 # 2. Engine from verified backup + launchers
 $engineBackup = if ($EngineBackupDir) { $EngineBackupDir } else { $BackupDir }

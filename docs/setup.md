@@ -12,12 +12,14 @@ Machine scope: this Windows machine, user `barne` only (by design).
 | `claude-fife` command | `C:\Users\barne\claude-fife\bin\` (on user PATH) |
 | Router OAuth logins (Claude + Codex subscriptions) | `C:\Users\barne\claude-fife\router\auth\` |
 | Router local API key + z.ai key | `C:\Users\barne\claude-fife\router\api-key.txt`, `config.yaml` — never commit, never share |
+| Installed build id (used by `claude-fife update`) | `C:\Users\barne\claude-fife\config\fife-version.txt` |
 | OpenCode | untouched, separate product/config |
 
 ## Defaults
 
 `config\settings.json` is created from `fife\config\settings.template.json`.
-The template disables auto-updates and turns on background-by-default:
+The template disables auto-updates (`DISABLE_UPDATES=1` also blocks manual
+`claude update`/`claude install`) and turns on background-by-default:
 Bash/PowerShell commands move to the background after 2 seconds, and
 subagents and MCP tool calls auto-background. Setup merges any missing keys
 into an existing `settings.json` without overwriting local edits.
@@ -46,6 +48,22 @@ OpenCode's local credential store; it fails loudly if the backup is missing.
 If only the fife tree is damaged, re-run `fife\setup.ps1` — it rebuilds
 everything from the backup and repo templates. Verify with
 `fife\tools\Test-Acceptance.ps1` (all checks must pass).
+
+## Updating (fork releases)
+
+`claude-fife update` and `claude-fife upgrade` are answered by the launcher, not
+the engine. They compare the installed build (`config\fife-version.txt`, written
+by setup) with the latest release in `DeputyFifeofMayberry/claude-code_fife` and
+print the release's asset name, SHA-256, and apply steps when a newer one
+exists. `claude-fife install` is refused outright. The engine's own updater and
+installer are never invoked: they ignore `DISABLE_AUTOUPDATER`, install upstream
+Claude Code into `C:\Users\<user>\.local\bin\`, and would bypass the fife tree.
+As defense in depth the launcher and settings template set `DISABLE_UPDATES=1`,
+the engine's documented switch for blocking both manual `update` and `install`.
+
+Applying a fork release means downloading and verifying the asset, then running
+its `fife\setup.ps1`. A release that moves the engine pin also needs the
+re-pin steps below.
 
 ## Deliberate re-pin (moving to a newer engine, by hand)
 
