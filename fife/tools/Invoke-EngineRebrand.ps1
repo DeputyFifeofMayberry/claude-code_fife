@@ -33,11 +33,22 @@ if ($Brand -notmatch '^[\x20-\x7e]+$') { throw "Brand must be printable ASCII: '
 
 # Each pattern is a UI label; the expected count is pinned to engine 2.1.302 so
 # an engine bump fails loudly instead of quietly rebranding half the UI.
+#
+# The last rule targets the compiled bytecode's string table, not the JS source:
+# Bun executes the embedded bytecode, so editing source literals alone does not
+# change strings the running code pulls from its constant pool. Entries are
+# [length | 0x80000000][4-byte hash][UTF-8 chars][NUL]; keep the length and hash
+# bytes intact (the welcome entry, already patched this way, proves the runtime
+# does not revalidate the hash for value strings). The hash below pins 2.1.302.
+$b = [string][char]0x0b + [string][char]0 + [string][char]0 + [string][char]0x80
+$h = [string][char]0xc9 + [string][char]0x2f + [string][char]0x86 + [string][char]0
+$nul = [string][char]0
 $patches = @(
     @{ Find = 'Welcome to Claude Code'; Replace = "Welcome to $Brand"; Expected = 7; What = 'welcome banners' }
     @{ Find = 'children:"Claude Code"'; Replace = "children:`"$Brand`""; Expected = 3; What = 'header labels' }
     @{ Find = 'var p="Claude Code"'; Replace = "var p=`"$Brand`""; Expected = 1; What = 'notification title' }
     @{ Find = 'var YTt="Claude Code"'; Replace = "var YTt=`"$Brand`""; Expected = 1; What = 'terminal title' }
+    @{ Find = "$b${h}Claude Code${nul}"; Replace = "$b${h}$Brand${nul}"; Expected = 1; What = 'bytecode header label' }
 )
 
 Add-Type -TypeDefinition @'
@@ -80,8 +91,8 @@ if ($KeepOriginal) {
 
 $bytes = [System.IO.File]::ReadAllBytes($Source)
 foreach ($p in $patches) {
-    $find = [System.Text.Encoding]::ASCII.GetBytes($p.Find)
-    $repl = [System.Text.Encoding]::ASCII.GetBytes($p.Replace)
+    $find = [System.Text.Encoding]::Latin1.GetBytes($p.Find)
+    $repl = [System.Text.Encoding]::Latin1.GetBytes($p.Replace)
     try {
         $n = [FifeEnginePatcher]::Replace($bytes, $find, $repl, [int]$p.Expected)
         Write-Host ("  patched {0} {1} occurrence(s)" -f $n, $p.What)

@@ -97,7 +97,12 @@ pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal
 
 The tool refuses to patch unless the pinned engine contains the expected
 occurrence counts (7 welcome banners, 3 header labels, 1 notification title,
-1 terminal title), so an engine bump fails loudly instead of half-rebranding.
+1 terminal title, 1 bytecode string-table entry), so an engine bump fails
+loudly instead of half-rebranding. Bun runs the embedded bytecode, not the JS
+source, so the header label also exists as a length/hash-prefixed entry in the
+bytecode string table; that entry is patched too (its length and hash bytes
+stay intact, as the welcome entry demonstrates the runtime does not revalidate
+them for value strings).
 It records `Provenance=patched-rebrand`, the patched `SHA256`, the now
 `HashMismatch` signature, and the upstream hash/signature alongside.
 
