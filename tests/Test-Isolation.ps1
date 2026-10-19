@@ -24,13 +24,18 @@ function Snapshot([string[]]$roots) {
 
 $watch = @($env:USERPROFILE, $env:APPDATA, $env:LOCALAPPDATA)
 $before = Snapshot $watch
+# The run must not create the default Claude config paths. They may already
+# exist on this machine from an earlier install, so compare with the state
+# before the run instead of requiring absence.
+$hadClaudeDir = Test-Path (Join-Path $env:USERPROFILE '.claude')
+$hadClaudeJson = Test-Path (Join-Path $env:USERPROFILE '.claude.json')
 
 $env:CLAUDE_CONFIG_DIR = $configDir
 $env:DISABLE_AUTOUPDATER = '1'
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
 $v = (& $engine --version 2>&1 | Out-String).Trim()
-Assert ($v -match '2\.1\.302') "version run failed: $v"
+Assert ($v -match '2\.1\.303') "version run failed: $v"
 # Headless prompt attempt: may fail on auth pre-login; file placement is under test.
 $probeDir = Join-Path $fifeRoot 'probe-project'
 New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
@@ -46,8 +51,8 @@ foreach ($k in $after.Keys) {
         $failures += "out-of-tree change: $k"
     }
 }
-Assert (-not (Test-Path (Join-Path $env:USERPROFILE '.claude'))) '~/.claude was created'
-Assert (-not (Test-Path (Join-Path $env:USERPROFILE '.claude.json'))) '~/.claude.json was created'
+Assert ((Test-Path (Join-Path $env:USERPROFILE '.claude')) -eq $hadClaudeDir) '~/.claude was created by the engine'
+Assert ((Test-Path (Join-Path $env:USERPROFILE '.claude.json')) -eq $hadClaudeJson) '~/.claude.json was created by the engine'
 
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
 Write-Host 'PASS: Test-Isolation'

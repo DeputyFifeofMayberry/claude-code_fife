@@ -41,7 +41,7 @@ Assert (Test-Path (Join-Path $tmp 'bin\Show-ClaudeSymbol.ps1')) 'symbol renderer
 $engine = Join-Path $tmp 'bin\claude-fife-engine.exe'
 Assert (Test-Path $engine) 'engine not installed in bin'
 if (Test-Path $engine) {
-    Assert (((& $engine --version 2>&1 | Out-String).Trim()) -match '2\.1\.302') 'engine version wrong'
+    Assert (((& $engine --version 2>&1 | Out-String).Trim()) -match '2\.1\.303') 'engine version wrong'
     $rec = Get-Content 'C:\Users\barne\claude-fife-backup\SHA256.txt' | Where-Object { $_ -like 'SHA256=*' }
     $expected = ($rec -split '=',2)[1]
     Assert ((Get-FileHash $engine -Algorithm SHA256).Hash -eq $expected) 'engine hash differs from backup record'
