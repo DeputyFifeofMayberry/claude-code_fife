@@ -37,8 +37,13 @@ screen, and the installed `fife-symbol` mod draws the same art inside the
 session, in the band above the prompt, until the first prompt is submitted.
 Non-interactive runs (`-p`, `--help`, redirected output) stay byte-clean;
 `CLAUDE_FIFE_SYMBOL=never` turns the symbol off and
-`CLAUDE_FIFE_SYMBOL=always` keeps it in the band for the whole session. See
-`docs\claude-symbol.md` for how to update the art.
+`CLAUDE_FIFE_SYMBOL=always` keeps it in the band for the whole session.
+
+New sessions also draw a 9x3 corner mark derived from the art at the top left,
+beside the version. It lives in the pinned engine's compiled glyph table, so
+it is applied with `fife\tools\Invoke-EngineSymbol.ps1` (after
+`Invoke-EngineRebrand.ps1`), pinned to engine 2.1.303. See
+`docs\claude-symbol.md` for the patch, the entries and how to update the art.
 
 ## Fresh setup (this machine, after the fife tree is deleted)
 
@@ -127,9 +132,13 @@ malformed lookup is silent. Merging and re-pinning remain deliberate steps.
    and `2.1.303`.
 4. Run `pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal -FifeVersion <build>`
    and confirm the banner version.
-5. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
+5. If the glyph table moved, update `$tableCount` and the expected entry
+   indices in `fife\tools\Invoke-EngineSymbol.ps1` (engine 2.1.303 uses
+   `255988` and the same indices as 2.1.302), then run
+   `pwsh fife\tools\Invoke-EngineSymbol.ps1` after the rebrand.
+6. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
    (`fife\tools\Test-Acceptance.ps1`).
-6. Commit the version bump (script changes only — never the binary).
+7. Commit the version bump (script changes only — never the binary).
 
 If the fresh download of the pinned version ever becomes unobtainable while
 the current binary still exists, `Get-PinnedEngine.ps1` falls back to copying
@@ -145,11 +154,11 @@ JS offsets stay valid.
 
 The banner also shows the engine version (`v2.1.303`). The tool retitles that
 to the fife build, taken from `config\fife-version.txt` in the installed tree
-(or `-FifeVersion`), so the banner reads `claude-fife v2.1.303r1`.
+(or `-FifeVersion`), so the banner reads `claude-fife v2.1.303r2`.
 
 ```powershell
 pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal
-pwsh fife\tools\Invoke-EngineRebrand.ps1 -FifeVersion 2.1.303r1   # explicit
+pwsh fife\tools\Invoke-EngineRebrand.ps1 -FifeVersion 2.1.303r2   # explicit
 ```
 
 The version lives in the bytecode string table: a u32 count, one u32 offset
