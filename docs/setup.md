@@ -33,10 +33,12 @@ in the `env` block.
 
 Interactive launches print the claude-fife startup symbol — the 256-color
 ANSI art in `assets\claude-symbol.ans` — before the engine draws its welcome
-screen. Non-interactive runs (`-p`, `--help`, redirected output) stay
-byte-clean; `CLAUDE_FIFE_SYMBOL=never` turns the symbol off and
-`CLAUDE_FIFE_SYMBOL=always` forces it on. See `docs\claude-symbol.md` for how
-to update the art.
+screen, and the installed `fife-symbol` mod draws the same art inside the
+session, in the band above the prompt, until the first prompt is submitted.
+Non-interactive runs (`-p`, `--help`, redirected output) stay byte-clean;
+`CLAUDE_FIFE_SYMBOL=never` turns the symbol off and
+`CLAUDE_FIFE_SYMBOL=always` keeps it in the band for the whole session. See
+`docs\claude-symbol.md` for how to update the art.
 
 ## Fresh setup (this machine, after the fife tree is deleted)
 

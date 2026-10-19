@@ -473,7 +473,12 @@ try {
     $env:ANTHROPIC_BASE_URL = $script:baseUrl
     if (Test-Path $keyFile) { $env:ANTHROPIC_AUTH_TOKEN = (Get-Content $keyFile -Raw).Trim() }
     $env:CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = '1'
-    & $engine --allow-dangerously-skip-permissions @args
+    # The symbol mod draws the ANSI art in the band above the prompt. Loaded
+    # only when setup installed it, so a bare checkout still starts.
+    $pluginArgs = @()
+    $symbolMod = Join-Path $root 'config\mods\fife-symbol'
+    if (Test-Path $symbolMod) { $pluginArgs = @('--plugin-dir', $symbolMod) }
+    & $engine --allow-dangerously-skip-permissions @pluginArgs @args
     $code = $LASTEXITCODE
     if ($null -eq $code) { $code = 0 }
 } finally {

@@ -38,6 +38,8 @@ if (Test-Path $symbolAsset) {
     Assert ($installedArt.Contains([string][char]27 + '[38;5;')) 'installed symbol lost its color sequences'
 }
 Assert (Test-Path (Join-Path $tmp 'bin\Show-ClaudeSymbol.ps1')) 'symbol renderer not copied to bin'
+Assert (Test-Path (Join-Path $tmp 'config\mods\fife-symbol\.claude-plugin\plugin.json')) 'in-session symbol mod not installed'
+Assert (Test-Path (Join-Path $tmp 'config\mods\fife-symbol\hooks\register.tsx')) 'in-session symbol mod hooks missing'
 $engine = Join-Path $tmp 'bin\claude-fife-engine.exe'
 Assert (Test-Path $engine) 'engine not installed in bin'
 if (Test-Path $engine) {

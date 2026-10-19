@@ -78,6 +78,11 @@ Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.cmd') (Join-Path $Root 'bin\
 # assets\ so the launcher can preview it without touching the repo.
 Copy-Item (Join-Path $fifeSrc 'tools\Show-ClaudeSymbol.ps1') (Join-Path $Root 'bin\Show-ClaudeSymbol.ps1') -Force
 Copy-Item (Join-Path $fifeSrc 'assets\claude-symbol.ans') (Join-Path $Root 'assets\claude-symbol.ans') -Force
+# The in-session symbol: a mod the launcher loads with --plugin-dir, drawing
+# the same art above the prompt.
+$symbolModDest = Join-Path $Root 'config\mods\fife-symbol'
+if (Test-Path $symbolModDest) { Remove-Item $symbolModDest -Recurse -Force }
+Copy-Item (Join-Path $fifeSrc 'mods\fife-symbol') $symbolModDest -Recurse -Force
 
 # 3. Settings (create once; never overwrite user edits). Keys the template adds
 # later (currently the background-by-default env block) are merged into an
