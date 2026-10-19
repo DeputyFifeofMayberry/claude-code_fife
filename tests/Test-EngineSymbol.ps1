@@ -7,7 +7,7 @@ function Assert($cond, $msg) { if (-not $cond) { $script:failures += $msg } }
 
 $repo = Split-Path -Parent $PSScriptRoot
 $tool = Join-Path $repo 'fife\tools\Invoke-EngineSymbol.ps1'
-$engine = 'C:\Users\barne\claude-fife-backup\claude-2.1.302.exe'
+$engine = 'C:\Users\barne\claude-fife-backup\claude-2.1.303.exe'
 $record = 'C:\Users\barne\claude-fife-backup\SHA256.txt'
 
 Assert (Test-Path $tool) 'glyph tool missing'
@@ -49,7 +49,7 @@ Assert ((Get-Text $bytes 59431) -eq $row0) 'facing edge not patched'
 Assert ((Get-Text $bytes 59446) -eq $row1.Substring(2, 5)) 'row 1 middle not patched'
 
 $v = (& $copy --version 2>&1 | Out-String).Trim()
-Assert ($v -match '2\.1\.302') "patched engine version wrong: $v"
+Assert ($v -match '2\.1\.303') "patched engine version wrong: $v"
 
 $recLines = Get-Content $rec
 Assert ($recLines -match '^SymbolMark=claude-fife-mark-braille-18x12$') 'record missing SymbolMark'

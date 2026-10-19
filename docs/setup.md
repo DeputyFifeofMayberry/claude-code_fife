@@ -132,9 +132,13 @@ malformed lookup is silent. Merging and re-pinning remain deliberate steps.
    and `2.1.303`.
 4. Run `pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal -FifeVersion <build>`
    and confirm the banner version.
-5. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
+5. If the glyph table moved, update `$tableCount` and the expected entry
+   indices in `fife\tools\Invoke-EngineSymbol.ps1` (engine 2.1.303 uses
+   `255988` and the same indices as 2.1.302), then run
+   `pwsh fife\tools\Invoke-EngineSymbol.ps1` after the rebrand.
+6. Re-run `pwsh fife\setup.ps1` and the full acceptance gauntlet
    (`fife\tools\Test-Acceptance.ps1`).
-6. Commit the version bump (script changes only — never the binary).
+7. Commit the version bump (script changes only — never the binary).
 
 If the fresh download of the pinned version ever becomes unobtainable while
 the current binary still exists, `Get-PinnedEngine.ps1` falls back to copying
@@ -150,11 +154,11 @@ JS offsets stay valid.
 
 The banner also shows the engine version (`v2.1.303`). The tool retitles that
 to the fife build, taken from `config\fife-version.txt` in the installed tree
-(or `-FifeVersion`), so the banner reads `claude-fife v2.1.303r1`.
+(or `-FifeVersion`), so the banner reads `claude-fife v2.1.303r2`.
 
 ```powershell
 pwsh fife\tools\Invoke-EngineRebrand.ps1 -KeepOriginal
-pwsh fife\tools\Invoke-EngineRebrand.ps1 -FifeVersion 2.1.303r1   # explicit
+pwsh fife\tools\Invoke-EngineRebrand.ps1 -FifeVersion 2.1.303r2   # explicit
 ```
 
 The version lives in the bytecode string table: a u32 count, one u32 offset

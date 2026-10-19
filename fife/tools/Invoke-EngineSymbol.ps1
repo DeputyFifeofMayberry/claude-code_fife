@@ -10,7 +10,7 @@
 # encoded offsets stay intact. The tool verifies each entry's current text
 # before writing and refuses to patch an engine that is not the pinned build.
 #
-# The engine's own version (2.1.302) is left untouched. The patch changes the
+# The engine's own version (2.1.303) is left untouched. The patch changes the
 # Authenticode hash; the pin record keeps the upstream hash and signature
 # alongside the patched hash, as Invoke-EngineRebrand.ps1 does.
 #
@@ -19,18 +19,18 @@
 #   pwsh fife\tools\Invoke-EngineSymbol.ps1 -Destination <path> # patch a copy
 [CmdletBinding()]
 param(
-    [string]$Source = 'C:\Users\barne\claude-fife-backup\claude-2.1.302.exe',
+    [string]$Source = 'C:\Users\barne\claude-fife-backup\claude-2.1.303.exe',
     [string]$Destination = '',
     [string]$Record = 'C:\Users\barne\claude-fife-backup\SHA256.txt',
-    [string]$Version = '2.1.302'
+    [string]$Version = '2.1.303'
 )
 $ErrorActionPreference = 'Stop'
 if ($Destination -eq '') { $Destination = $Source }
 if (-not (Test-Path $Source)) { throw "Engine not found: $Source" }
 
-# Layout of the 2.1.302 bytecode string table (same pin as the rebrand tool).
+# Layout of the 2.1.303 bytecode string table (same pin as the rebrand tool).
 $tableBase = 122177408
-$tableCount = 255962
+$tableCount = 255988
 $utf16 = [System.Text.Encoding]::Unicode
 
 function Read-U32([byte[]]$d, [int]$o) {
@@ -70,7 +70,7 @@ $lid = $row0.Substring(2, 1)
 $lidBody = $row0.Substring(3, 3)
 $wink = $row0.Substring(2, 4)
 
-# Index in the 2.1.302 string table, the glyph it holds now, and the glyph
+# Index in the 2.1.303 string table, the glyph it holds now, and the glyph
 # that takes its place. Every replacement keeps the entry's code-unit count.
 $patches = @(
     # Arms: down and one-up share these; up has its own.
