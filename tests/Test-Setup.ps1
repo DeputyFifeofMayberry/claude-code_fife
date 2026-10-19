@@ -16,9 +16,15 @@ $dummyOr = 'sk-or-v1-' + [guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToS
 $prevOr = $env:OPENROUTER_API_KEY
 $env:OPENROUTER_API_KEY = $dummyOr
 
-# Run setup twice (idempotency)
+# Run setup twice (idempotency). Between runs, simulate a tree whose settings
+# carry a user edit and are missing one of the template's background keys.
 & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
 Assert ($LASTEXITCODE -eq 0) "setup run 1 failed ($LASTEXITCODE)"
+$settings = Join-Path $tmp 'config\settings.json'
+$pre = Get-Content $settings -Raw | ConvertFrom-Json
+$pre | Add-Member -NotePropertyName theme -NotePropertyValue 'dark'
+$pre.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS')
+$pre | ConvertTo-Json -Depth 10 | Set-Content $settings -Encoding UTF8
 & pwsh -NoProfile -File $setup -Root $tmp -SkipPath -RouterExeSource $routerSrc | Out-Null
 Assert ($LASTEXITCODE -eq 0) "setup run 2 (idempotency) failed ($LASTEXITCODE)"
 
@@ -41,6 +47,9 @@ Assert (Test-Path $settings) 'settings.json not created'
 if (Test-Path $settings) {
     $sj = Get-Content $settings -Raw | ConvertFrom-Json
     Assert ($sj.autoUpdates -eq $false) 'settings autoUpdates not false'
+    Assert ($sj.env.CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS -eq '2000') 'missing background default not merged'
+    Assert ($sj.env.CLAUDE_AUTO_BACKGROUND_TASKS -eq '1') 'background tasks default not set'
+    Assert ($sj.theme -eq 'dark') 'settings merge overwrote a user value'
 }
 
 $cfgPath = Join-Path $tmp 'router\config.yaml'

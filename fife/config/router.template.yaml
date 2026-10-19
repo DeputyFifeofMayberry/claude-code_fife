@@ -42,3 +42,28 @@ api-keys:
       models:
         - name: "deepseek/deepseek-v4.1-flash-1017"
           alias: "deepseek-v4.1-flash"
+  openai-compatibility:
+    # OpenCode Zen. Registered OpenAI-compatible because Zen's Anthropic-shaped
+    # endpoint (/zen/v1/messages) rejects the forwarded key ("Missing API key"),
+    # while its OpenAI-shaped endpoint accepts it as a bearer token.
+    - name: opencode
+      base-url: "https://opencode.ai/zen/v1"
+      keys:
+        - api-key: "__OPENCODE_TOKEN__"
+      models:
+        - name: "glm-5.3-flash"
+          alias: "opencode/glm-5.3-flash"
+        - name: "glm-5.3"
+          alias: "opencode/glm-5.3"
+        - name: "deepseek-v4.1-flash"
+          alias: "opencode/deepseek-v4.1-flash"
+        - name: "kimi-k3"
+          alias: "opencode/kimi-k3"
+        - name: "gpt-5.4"
+          alias: "opencode/gpt-5.4"
+        - name: "glm-5.3-flash-free"
+          alias: "opencode/glm-5.3-flash-free"
+        - name: "deepseek-v4.1-flash-free"
+          alias: "opencode/deepseek-v4.1-flash-free"
+        - name: "big-pickle"
+          alias: "opencode/big-pickle"

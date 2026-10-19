@@ -6,6 +6,7 @@ param(
     [string]$Root = 'C:\Users\barne\claude-fife',
     [string]$BackupDir = 'C:\Users\barne\claude-fife-backup',
     [string]$RouterExeSource = '',
+    [string]$EngineBackupDir = '',
     [switch]$SkipPath
 )
 $ErrorActionPreference = 'Stop'
@@ -17,6 +18,16 @@ function Get-ZaiKey {
     $py = (Get-Command python3 -ErrorAction SilentlyContinue).Source
     if (-not $py) { return $null }
     $code = 'import sqlite3,json,pathlib; con=sqlite3.connect("file:"+str(pathlib.Path.home()/".local"/"share"/"opencode"/"opencode-local.db")+"?mode=ro", uri=True); r=con.execute("SELECT value FROM credential WHERE integration_id=? AND active=1 LIMIT 1", ("zai-coding-plan",)).fetchone(); print(json.loads(r[0])["key"])'
+    try { return (& $py -c $code 2>$null | Out-String).Trim() } catch { return $null }
+}
+
+function Get-OpenCodeToken {
+    $db = Join-Path $env:USERPROFILE '.local\share\opencode\opencode-local.db'
+    if (-not (Test-Path $db)) { return $null }
+    $py = (Get-Command python3 -ErrorAction SilentlyContinue).Source
+    if (-not $py) { return $null }
+    # The OpenCode account credential is OAuth: the bearer token lives in "access".
+    $code = 'import sqlite3,json,pathlib; con=sqlite3.connect("file:"+str(pathlib.Path.home()/".local"/"share"/"opencode"/"opencode-local.db")+"?mode=ro", uri=True); r=con.execute("SELECT value FROM credential WHERE integration_id=? AND active=1 LIMIT 1", ("opencode",)).fetchone(); print(json.loads(r[0]).get("access") or "")'
     try { return (& $py -c $code 2>$null | Out-String).Trim() } catch { return $null }
 }
 
@@ -32,19 +43,45 @@ foreach ($d in 'bin','config','router','logs',(Join-Path 'router' 'auth')) {
 }
 
 # 2. Engine from verified backup + launchers
-$recordFile = Join-Path $BackupDir 'SHA256.txt'
-$backupExe = Join-Path $BackupDir 'claude-2.1.302.exe'
+$engineBackup = if ($EngineBackupDir) { $EngineBackupDir } else { $BackupDir }
+$recordFile = Join-Path $engineBackup 'SHA256.txt'
+$backupExe = Join-Path $engineBackup 'claude-2.1.302.exe'
 if (-not (Test-Path $backupExe)) { throw "Pinned engine backup missing: $backupExe (run fife\tools\Get-PinnedEngine.ps1)" }
 $expectedHash = ((Get-Content $recordFile | Where-Object { $_ -like 'SHA256=*' }) -split '=',2)[1]
 if ((Get-FileHash $backupExe -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Backup engine hash mismatch - refusing to install.' }
-Copy-Item $backupExe (Join-Path $Root 'bin\claude-fife-engine.exe') -Force
+$installedExe = Join-Path $Root 'bin\claude-fife-engine.exe'
+# Skip the copy when the installed engine already matches the pin, so setup can
+# run while claude-fife is in use (Windows locks a running executable).
+if (-not ((Test-Path $installedExe) -and (Get-FileHash $installedExe -Algorithm SHA256).Hash -eq $expectedHash)) {
+    Copy-Item $backupExe $installedExe -Force
+}
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.ps1') (Join-Path $Root 'bin\claude-fife.ps1') -Force
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.cmd') (Join-Path $Root 'bin\claude-fife.cmd') -Force
 
-# 3. Settings (create once; never overwrite user edits)
+# 3. Settings (create once; never overwrite user edits). Keys the template adds
+# later (currently the background-by-default env block) are merged into an
+# existing file additively: missing keys appear, user values stay as they are.
 $settingsOut = Join-Path $Root 'config\settings.json'
+$settingsTemplate = Join-Path $fifeSrc 'config\settings.template.json'
 if (-not (Test-Path $settingsOut)) {
-    Copy-Item (Join-Path $fifeSrc 'config\settings.template.json') $settingsOut
+    Copy-Item $settingsTemplate $settingsOut
+} else {
+    $current = Get-Content $settingsOut -Raw | ConvertFrom-Json
+    $tpl = Get-Content $settingsTemplate -Raw | ConvertFrom-Json
+    $changed = $false
+    if ($null -eq $current.PSObject.Properties['env']) {
+        $current | Add-Member -NotePropertyName env -NotePropertyValue ([pscustomobject]@{})
+        $changed = $true
+    }
+    if ($tpl.env) {
+        foreach ($prop in $tpl.env.PSObject.Properties) {
+            if ($null -eq $current.env.PSObject.Properties[$prop.Name]) {
+                $current.env | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value
+                $changed = $true
+            }
+        }
+    }
+    if ($changed) { $current | ConvertTo-Json -Depth 10 | Set-Content $settingsOut -Encoding UTF8 }
 }
 
 # 4. Router exe (pinned CLIProxyAPI v8.0.33, hash-verified)
@@ -85,6 +122,9 @@ if (-not (Test-Path $routerCfg)) {
     $orKey = Get-OpenRouterKey
     if (-not $orKey) { Write-Warning 'OPENROUTER_API_KEY not set; router config written with placeholder - OpenRouter models will not work until provisioned.'; $orKey = 'OPENROUTER-KEY-NOT-PROVISIONED' }
     $yaml = $yaml.Replace('__OPENROUTER_API_KEY__', $orKey)
+    $ocToken = Get-OpenCodeToken
+    if (-not $ocToken) { Write-Warning 'opencode credential not found in OpenCode store; router config written with placeholder - OpenCode models will not work until provisioned.'; $ocToken = 'OPENCODE-TOKEN-NOT-PROVISIONED' }
+    $yaml = $yaml.Replace('__OPENCODE_TOKEN__', $ocToken)
     Set-Content $routerCfg $yaml -Encoding UTF8
 } elseif (-not (Get-Content $routerCfg -Raw).Contains($localKey)) {
     Write-Warning 'router config.yaml does not contain the current api-key.txt value (partial restore?) - repairing the access key line.'
@@ -103,7 +143,7 @@ if ($cfgNow -notmatch '(?m)^\s*-\s*name:\s*openrouter\s*$') {
         Write-Warning 'router config has no openrouter provider and OPENROUTER_API_KEY is not set; skipping. Set it and re-run setup.'
     } else {
         $tpl = Get-Content (Join-Path $fifeSrc 'config\router.template.yaml') -Raw
-        $m = [regex]::Match($tpl, '(?ms)^    - name: openrouter\s*$.*')
+        $m = [regex]::Match($tpl, '(?ms)^    - name: openrouter\s*\n(?:(?!^    - name:|^  [a-z]).)*')
         if (-not $m.Success) { throw 'openrouter block not found in router.template.yaml' }
         $block = $m.Value.Replace('__OPENROUTER_API_KEY__', $orKey).TrimEnd() -replace '\r?\n', "`n"
         $eol = if ($cfgNow.Contains("`r`n")) { "`r`n" } else { "`n" }
@@ -113,6 +153,46 @@ if ($cfgNow -notmatch '(?m)^\s*-\s*name:\s*openrouter\s*$') {
         if ((Get-Content $routerCfg -Raw) -notmatch '(?m)^\s*-\s*name:\s*openrouter\s*$') { throw 'openrouter block not present after write' }
         Write-Host 'Added openrouter provider to router config.'
     }
+}
+
+# 6c. OpenCode provider. It lives under openai-compatibility (see the template);
+# "present" means the file holds a 4-space "- name: opencode" entry.
+$tplRaw = Get-Content (Join-Path $fifeSrc 'config\router.template.yaml') -Raw
+$cfgNow = Get-Content $routerCfg -Raw
+$ocPresent = $cfgNow -match '(?m)^    - name:\s*opencode\s*$'
+if (-not $ocPresent) {
+    $ocToken = Get-OpenCodeToken
+    if (-not $ocToken) {
+        Write-Warning 'router config has no opencode provider and no OpenCode credential is available; skipping. Sign in to OpenCode and re-run setup.'
+    } else {
+        $m = [regex]::Match($tplRaw, '(?ms)^  openai-compatibility:\n.*')
+        if (-not $m.Success) { throw 'openai-compatibility section not found in router.template.yaml' }
+        $section = $m.Value.Replace('__OPENCODE_TOKEN__', $ocToken).TrimEnd() -replace '\r?\n', "`n"
+        $eol = if ($cfgNow.Contains("`r`n")) { "`r`n" } else { "`n" }
+        if ($cfgNow -match '(?m)^  openai-compatibility:\s*$') {
+            # Section exists: append only its provider entries so the YAML key
+            # is never duplicated.
+            $entries = ($section -split "`n" | Select-Object -Skip 1) -join "`n"
+            $new = $cfgNow.TrimEnd() + $eol + ($entries -replace "`n", $eol) + $eol
+        } else {
+            $new = $cfgNow.TrimEnd() + $eol + ($section -replace "`n", $eol) + $eol
+        }
+        Set-Content $routerCfg $new -Encoding UTF8 -NoNewline
+        if ((Get-Content $routerCfg -Raw) -notmatch '(?m)^    - name:\s*opencode\s*$') { throw 'opencode block not present after write' }
+        Write-Host 'Added opencode provider to router config.'
+    }
+}
+
+# 6e. Model labels: the router cannot send model descriptions, and Claude Code's
+# gateway discovery drops any description the gateway does not supply, so the
+# launcher runs a small localhost proxy that adds them to /v1/models. Copy the
+# proxy and its label map into the tree (labels are not secret; create once so
+# local edits to the map survive re-runs).
+$labelsProxy = Join-Path $Root 'bin\model-labels-proxy.js'
+Copy-Item (Join-Path $fifeSrc 'tools\model-labels-proxy.js') $labelsProxy -Force
+$labelsFile = Join-Path $Root 'config\model-labels.json'
+if (-not (Test-Path $labelsFile)) {
+    Copy-Item (Join-Path $fifeSrc 'config\model-labels.json') $labelsFile
 }
 
 # 7. Restrict secret-bearing files and the OAuth token dir to the current user
