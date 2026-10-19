@@ -140,6 +140,13 @@ malformed lookup is silent. Merging and re-pinning remain deliberate steps.
    (`fife\tools\Test-Acceptance.ps1`).
 7. Commit the version bump (script changes only — never the binary).
 
+Running sessions do not block step 6: when the installed engine is in use,
+setup stages the new pin, renames the in-use image to
+`claude-fife-engine.exe.old-*`, and installs the pin at the canonical path.
+Sessions already open keep the renamed image until they exit; the next launch
+runs the new pin, and the `.old-*` file can be deleted once no session is
+running.
+
 If the fresh download of the pinned version ever becomes unobtainable while
 the current binary still exists, `Get-PinnedEngine.ps1` falls back to copying
 the installed engine and records `Provenance=copied-installed`.

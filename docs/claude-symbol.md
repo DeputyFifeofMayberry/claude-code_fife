@@ -94,9 +94,12 @@ pwsh fife\tools\Invoke-EngineSymbol.ps1
 
 The patcher updates the pin record's `SHA256` and adds
 `SymbolMark=claude-fife-mark-braille-18x12`, keeping the upstream hash and
-signature lines as provenance. Exit every running claude-fife session, then
-start a new one: `Ensure-EnginePin` in the launcher copies the patched engine
-into `bin\` the next time the file is not locked.
+signature lines as provenance. Running sessions do not block the new pin:
+`Ensure-EnginePin` in the launcher renames the in-use engine aside and installs
+the patched build at the canonical path, so it applies on the next launch.
+Sessions already open keep the renamed image until they exit; the
+`claude-fife-engine.exe.old-*` files next to `bin\` can be deleted once no
+session is running.
 
 ## Updating the art
 

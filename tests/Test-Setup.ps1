@@ -114,6 +114,35 @@ if (Test-Path $cfgPath) {
     }
 }
 
+# Locked-engine install: setup renames an in-use image aside and installs the
+# backup pin at the canonical path. The share-delete-only handle models how
+# Windows holds a running executable: overwrite is refused, rename is allowed.
+$lockedRoot = Join-Path $tmp 'locked'
+$lockedBackup = Join-Path $tmp 'lockedbackup'
+New-Item -ItemType Directory -Force -Path (Join-Path $lockedRoot 'bin'), (Join-Path $lockedRoot 'config'), $lockedBackup | Out-Null
+$lockedEngine = Join-Path $lockedRoot 'bin\claude-fife-engine.exe'
+$lockedPin = Join-Path $lockedBackup 'claude-2.1.303.exe'
+Copy-Item "$env:WINDIR\System32\cmd.exe" $lockedEngine
+Copy-Item "$env:WINDIR\System32\cmd.exe" $lockedPin
+Add-Content -LiteralPath $lockedPin -Value 'pin-test' -Encoding ASCII  # distinct hash
+$lockedPinHash = (Get-FileHash $lockedPin -Algorithm SHA256).Hash
+$lockedOldHash = (Get-FileHash $lockedEngine -Algorithm SHA256).Hash
+Set-Content (Join-Path $lockedBackup 'SHA256.txt') "SHA256=$lockedPinHash`nVersion=2.1.303" -Encoding UTF8
+$lock = [System.IO.File]::Open($lockedEngine, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+    [System.IO.FileShare]::Read -bor [System.IO.FileShare]::Delete)
+try {
+    & pwsh -NoProfile -File $setup -Root $lockedRoot -SkipPath -RouterExeSource $routerSrc -EngineBackupDir $lockedBackup | Out-Null
+    Assert ($LASTEXITCODE -eq 0) "setup with locked engine failed ($LASTEXITCODE)"
+    Assert ((Get-FileHash $lockedEngine -Algorithm SHA256).Hash -eq $lockedPinHash) 'setup did not install the pin over a locked engine'
+    $asides = @(Get-ChildItem (Join-Path $lockedRoot 'bin') -Filter 'claude-fife-engine.exe.old-*')
+    Assert ($asides.Count -eq 1) "expected one renamed old image, found $($asides.Count)"
+    if ($asides.Count -eq 1) {
+        Assert ((Get-FileHash $asides[0].FullName -Algorithm SHA256).Hash -eq $lockedOldHash) 'renamed image is not the old engine'
+    }
+} finally {
+    $lock.Dispose()
+}
+
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 $env:OPENROUTER_API_KEY = $prevOr
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
