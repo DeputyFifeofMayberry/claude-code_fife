@@ -1,7 +1,7 @@
 #Requires -Version 7.0
-# Replaces the small Clawd mark at the top left of a new session with a 9x3
-# Claude mark derived from assets\claude-symbol.ans: a rounded body with a
-# lighter top edge, the same silhouette as the full 64x42 drawing.
+# Replaces the small Clawd mark at the top left of a new session with a
+# braille rendition of assets\claude-symbol.ans. The 9x3 corner holds 18x12
+# braille dots, which keeps the art's silhouette and notches at that size.
 #
 # The mark is drawn by the engine's header component from glyph strings in
 # the bytecode string table. The table keeps one UTF-16 entry per glyph
@@ -55,55 +55,65 @@ function Get-EntryText([byte[]]$d, $entry) {
     $utf16.GetString($d, $entry.TextOffset, $entry.Units * 2)
 }
 
-$rows = @(
-    ' ▄█████▄ '   # top edge, 9 cells
-    '█████████'   # body, 9 cells
-    ' ▀█████▀ '   # bottom edge, 9 cells
-)
+# A braille cell is a 2x4 dot matrix, so 9x3 cells give the mark an 18x12
+# dot grid: the art's silhouette and notches survive at the corner's size.
+$row0 = "`u{2800}`u{28e0}`u{28f6}`u{28f6}`u{28f6}`u{28f6}`u{28f6}`u{28e6}`u{2800}"
+$row1 = "`u{2800}`u{28b8}`u{28ff}`u{28ff}`u{28ff}`u{28ff}`u{28ff}`u{28bf}`u{2800}"
+$row2 = "`u{2800}`u{28e0}`u{28ec}`u{28ff}`u{28ff}`u{28ff}`u{28e7}`u{28e4}`u{2840}"
+$armL = $row0.Substring(0, 2)
+$top = $row0.Substring(2, 6)
+$armR = $row0.Substring(8, 1)
+$bodyL = $row1.Substring(0, 2)
+$bodyM = $row1.Substring(2, 5)
+$bodyR = $row1.Substring(7, 2)
+$lid = $row0.Substring(2, 1)
+$lidBody = $row0.Substring(3, 3)
+$wink = $row0.Substring(2, 4)
 
 # Index in the 2.1.302 string table, the glyph it holds now, and the glyph
 # that takes its place. Every replacement keeps the entry's code-unit count.
 $patches = @(
     # Arms: down and one-up share these; up has its own.
-    @{ Index = 59392; Old = ' ▐'; New = ' ▄' }
-    @{ Index = 59393; Old = '▝▜'; New = '██' }
-    @{ Index = 59394; Old = '█▀'; New = '██' }
-    @{ Index = 59395; Old = '▗▟'; New = ' ▄' }
-    @{ Index = 59396; Old = '▄'; New = ' ' }
-    @{ Index = 59397; Old = ' ▜'; New = '██' }
-    @{ Index = 59398; Old = '█▘'; New = '██' }
+    @{ Index = 59392; Old = ' ▐'; New = $armL }
+    @{ Index = 59393; Old = '▝▜'; New = $bodyL }
+    @{ Index = 59394; Old = '█▀'; New = $bodyR }
+    @{ Index = 59395; Old = '▗▟'; New = $armL }
+    @{ Index = 59396; Old = '▄'; New = $armR }
+    @{ Index = 59397; Old = ' ▜'; New = $bodyL }
+    @{ Index = 59398; Old = '█▘'; New = $bodyR }
     # Eyes: open, left and right share the top edge; blinks keep the shape.
-    @{ Index = 59399; Old = '▛███▛█'; New = '█████▄' }
-    @{ Index = 59400; Old = '▟███▟█'; New = '█████▄' }
-    @{ Index = 59401; Old = '█▟███▟'; New = '█████▄' }
-    @{ Index = 59402; Old = '▂'; New = '█' }
-    @{ Index = 59404; Old = '▛███'; New = '████' }
+    @{ Index = 59399; Old = '▛███▛█'; New = $top }
+    @{ Index = 59400; Old = '▟███▟█'; New = $top }
+    @{ Index = 59401; Old = '█▟███▟'; New = $top }
+    @{ Index = 59402; Old = '▂'; New = $lid }
+    @{ Index = 59403; Old = '███'; New = $lidBody }
+    @{ Index = 59404; Old = '▛███'; New = $wink }
     # Feet: every stance is the same bottom edge, so the mark does not wobble.
-    @{ Index = 59405; Old = ' ▝▝   ▝▝ '; New = $rows[2] }
-    @{ Index = 59406; Old = ' ▝▝      '; New = $rows[2] }
-    @{ Index = 59407; Old = '      ▝▝ '; New = $rows[2] }
-    # The facing frames: every row becomes the matching mark row. The frames
-    # paint their from..to span on the clawd background; the mark's cells in
-    # those spans are full blocks, so the background does not show through.
-    @{ Index = 59413; Old = ' ▐█▜██▛█ '; New = $rows[0] }
-    @{ Index = 59415; Old = '  █▛██▛▌ '; New = $rows[0] }
-    @{ Index = 59418; Old = '  ▐█▛█▜  '; New = $rows[0] }
-    @{ Index = 59421; Old = '   ██▛▌  '; New = $rows[0] }
-    @{ Index = 59424; Old = '   ▐██   '; New = $rows[0] }
-    @{ Index = 59426; Old = '  █████▌ '; New = $rows[0] }
-    @{ Index = 59427; Old = ' ▐██████ '; New = $rows[0] }
-    @{ Index = 59428; Old = '   ▛██▌  '; New = $rows[0] }
-    @{ Index = 59429; Old = '  ▐▜▛██  '; New = $rows[0] }
-    @{ Index = 59430; Old = '  ▛██▛█▌ '; New = $rows[0] }
-    @{ Index = 59431; Old = ' ▐▛███▜█ '; New = $rows[0] }
-    @{ Index = 59414; Old = '▝▜██████▀'; New = $rows[1] }
-    @{ Index = 59416; Old = ' ▝█████▛ '; New = $rows[1] }
-    @{ Index = 59419; Old = '  ▐████  '; New = $rows[1] }
-    @{ Index = 59422; Old = '   ███▌  '; New = $rows[1] }
-    @{ Index = 59417; Old = '  ▘▘  ▘▘ '; New = $rows[2] }
-    @{ Index = 59420; Old = '  ▝▝ ▝▝  '; New = $rows[2] }
-    @{ Index = 59423; Old = '   ▘  ▘  '; New = $rows[2] }
-    @{ Index = 59425; Old = '   ▝ ▝   '; New = $rows[2] }
+    @{ Index = 59405; Old = ' ▝▝   ▝▝ '; New = $row2 }
+    @{ Index = 59406; Old = ' ▝▝      '; New = $row2 }
+    @{ Index = 59407; Old = '      ▝▝ '; New = $row2 }
+    # The middle of row 1 is the component's own literal, patched too.
+    @{ Index = 59446; Old = '█████'; New = $bodyM }
+    # The facing frames: every row becomes the matching mark row.
+    @{ Index = 59413; Old = ' ▐█▜██▛█ '; New = $row0 }
+    @{ Index = 59415; Old = '  █▛██▛▌ '; New = $row0 }
+    @{ Index = 59418; Old = '  ▐█▛█▜  '; New = $row0 }
+    @{ Index = 59421; Old = '   ██▛▌  '; New = $row0 }
+    @{ Index = 59424; Old = '   ▐██   '; New = $row0 }
+    @{ Index = 59426; Old = '  █████▌ '; New = $row0 }
+    @{ Index = 59427; Old = ' ▐██████ '; New = $row0 }
+    @{ Index = 59428; Old = '   ▛██▌  '; New = $row0 }
+    @{ Index = 59429; Old = '  ▐▜▛██  '; New = $row0 }
+    @{ Index = 59430; Old = '  ▛██▛█▌ '; New = $row0 }
+    @{ Index = 59431; Old = ' ▐▛███▜█ '; New = $row0 }
+    @{ Index = 59414; Old = '▝▜██████▀'; New = $row1 }
+    @{ Index = 59416; Old = ' ▝█████▛ '; New = $row1 }
+    @{ Index = 59419; Old = '  ▐████  '; New = $row1 }
+    @{ Index = 59422; Old = '   ███▌  '; New = $row1 }
+    @{ Index = 59417; Old = '  ▘▘  ▘▘ '; New = $row2 }
+    @{ Index = 59420; Old = '  ▝▝ ▝▝  '; New = $row2 }
+    @{ Index = 59423; Old = '   ▘  ▘  '; New = $row2 }
+    @{ Index = 59425; Old = '   ▝ ▝   '; New = $row2 }
 )
 
 $bytes = [System.IO.File]::ReadAllBytes($Source)
@@ -152,7 +162,7 @@ if ($toPatch.Count -gt 0) {
             if ($line -match '^([^=]+)=(.*)$') { $recordMap[$Matches[1]] = $Matches[2] }
         }
         $recordMap['SHA256'] = $patchedHash
-        $recordMap['SymbolMark'] = 'claude-fife-mark-9x3'
+        $recordMap['SymbolMark'] = 'claude-fife-mark-braille-18x12'
         if (-not $recordMap.Contains('UpstreamSHA256')) { $recordMap['UpstreamSHA256'] = $upstreamHash }
         if (-not $recordMap.Contains('UpstreamSignatureStatus')) { $recordMap['UpstreamSignatureStatus'] = $upstreamSignature }
         $recordMap.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } |
@@ -179,7 +189,7 @@ if ($versionOut -notmatch [regex]::Escape($Version)) {
 
 Write-Host "Patched engine: $Destination"
 if ($patched) {
-    Write-Host "  symbol:    claude-fife-mark-9x3 ($($patches.Count) glyph entries)"
+    Write-Host "  symbol:    claude-fife-mark-braille-18x12 ($($patches.Count) glyph entries)"
     Write-Host "  sha256:    $patchedHash"
     Write-Host "  signature: $patchedSignature (was $upstreamSignature)"
 } else {

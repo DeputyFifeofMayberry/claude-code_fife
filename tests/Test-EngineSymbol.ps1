@@ -38,20 +38,21 @@ function Get-Text([byte[]]$d, [int]$index) {
 }
 
 $bytes = [System.IO.File]::ReadAllBytes($copy)
-$row0 = ' ▄█████▄ '
-$row1 = '█████████'
-$row2 = ' ▀█████▀ '
-Assert ((Get-Text $bytes 59392) -eq ' ▄') 'top-left arm not patched'
-Assert ((Get-Text $bytes 59399) -eq '█████▄') 'eyes not patched'
+$row0 = "`u{2800}`u{28e0}`u{28f6}`u{28f6}`u{28f6}`u{28f6}`u{28f6}`u{28e6}`u{2800}"
+$row1 = "`u{2800}`u{28b8}`u{28ff}`u{28ff}`u{28ff}`u{28ff}`u{28ff}`u{28bf}`u{2800}"
+$row2 = "`u{2800}`u{28e0}`u{28ec}`u{28ff}`u{28ff}`u{28ff}`u{28e7}`u{28e4}`u{2840}"
+Assert ((Get-Text $bytes 59392) -eq $row0.Substring(0, 2)) 'top-left arm not patched'
+Assert ((Get-Text $bytes 59399) -eq $row0.Substring(2, 6)) 'eyes not patched'
 Assert ((Get-Text $bytes 59405) -eq $row2) 'feet not patched'
 Assert ((Get-Text $bytes 59414) -eq $row1) 'facing row not patched'
 Assert ((Get-Text $bytes 59431) -eq $row0) 'facing edge not patched'
+Assert ((Get-Text $bytes 59446) -eq $row1.Substring(2, 5)) 'row 1 middle not patched'
 
 $v = (& $copy --version 2>&1 | Out-String).Trim()
 Assert ($v -match '2\.1\.302') "patched engine version wrong: $v"
 
 $recLines = Get-Content $rec
-Assert ($recLines -match '^SymbolMark=claude-fife-mark-9x3$') 'record missing SymbolMark'
+Assert ($recLines -match '^SymbolMark=claude-fife-mark-braille-18x12$') 'record missing SymbolMark'
 Assert ($recLines -match '^SHA256=[0-9A-F]{64}$') 'record SHA256 malformed'
 $newHash = ($recLines | Where-Object { $_ -like 'SHA256=*' }) -split '=', 2 | Select-Object -Last 1
 Assert ((Get-FileHash $copy -Algorithm SHA256).Hash -eq $newHash) 'record SHA256 does not match the patched engine'
