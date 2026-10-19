@@ -291,6 +291,48 @@ if ($env:CLAUDE_FIFE_LIVE_TEST -eq '1') {
     Write-Host 'LIVE: upstream check ran against GitHub'
 }
 
+# 9. A rebuilt pin is installed even while the old engine image is open: the
+# in-use build is renamed aside and the pin takes the canonical path. The
+# share-delete-only handle models how Windows holds a running executable —
+# overwrite is refused, rename is allowed.
+$pinRootDir = Join-Path $tmp 'pinroot'
+$pinBackupDir = Join-Path $tmp 'pinbackup'
+New-Item -ItemType Directory -Force -Path (Join-Path $pinRootDir 'bin'), (Join-Path $pinRootDir 'config'), $pinBackupDir | Out-Null
+$pinEngine = Join-Path $pinRootDir 'bin\claude-fife-engine.exe'
+$pinExeFile = Join-Path $pinBackupDir 'claude-9.9.9.exe'
+Copy-Item "$env:WINDIR\System32\cmd.exe" $pinEngine
+Copy-Item "$env:WINDIR\System32\cmd.exe" $pinExeFile
+Add-Content -LiteralPath $pinExeFile -Value 'pin-test' -Encoding ASCII  # distinct hash, still a valid image
+$pinHash = (Get-FileHash $pinExeFile -Algorithm SHA256).Hash
+$oldHash = (Get-FileHash $pinEngine -Algorithm SHA256).Hash
+Set-Content (Join-Path $pinBackupDir 'SHA256.txt') "SHA256=$pinHash`nVersion=9.9.9" -Encoding UTF8
+Remove-Item Env:CLAUDE_FIFE_ENGINE_PATH -ErrorAction SilentlyContinue
+$env:CLAUDE_FIFE_ROOT = $pinRootDir
+$env:CLAUDE_FIFE_BACKUP_DIR = $pinBackupDir
+$env:CLAUDE_FIFE_ROUTER_EXE = Join-Path $tmp 'no-router.exe'
+$lock = [System.IO.File]::Open($pinEngine, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read,
+    [System.IO.FileShare]::Read -bor [System.IO.FileShare]::Delete)
+try {
+    & pwsh -NoProfile -File $launcherPs1 --help 2>&1 | Out-Null
+    Assert ((Get-FileHash $pinEngine -Algorithm SHA256).Hash -eq $pinHash) 'pin not installed while the old engine was open'
+    $asides = @(Get-ChildItem (Join-Path $pinRootDir 'bin') -Filter 'claude-fife-engine.exe.old-*')
+    # A real image section blocks deletion but allows the rename; a plain
+    # share-delete handle blocks the overwrite but not a later delete, so the
+    # same launch may already have cleaned the renamed image up.
+    Assert ($asides.Count -le 1) "expected at most one renamed old image, found $($asides.Count)"
+    if ($asides.Count -eq 1) {
+        Assert ((Get-FileHash $asides[0].FullName -Algorithm SHA256).Hash -eq $oldHash) 'renamed image is not the old engine'
+    }
+} finally {
+    $lock.Dispose()
+}
+
+# 10. A stale image that nothing holds is removed on the next launch.
+$stale = Join-Path $pinRootDir 'bin\claude-fife-engine.exe.old-stale'
+Set-Content -LiteralPath $stale -Value 'stale' -Encoding ASCII
+& pwsh -NoProfile -File $launcherPs1 --help 2>&1 | Out-Null
+Assert (-not (Test-Path -LiteralPath $stale)) 'unlocked stale engine image was not removed on the next launch'
+
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 if ($failures.Count) { $failures | ForEach-Object { Write-Host "FAIL: $_" }; exit 1 }
 Write-Host 'PASS: Test-Launcher'

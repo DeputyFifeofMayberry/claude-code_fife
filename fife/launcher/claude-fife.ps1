@@ -32,10 +32,38 @@ function Test-RouterHealth {
     }
 }
 
+# Windows refuses to overwrite a running executable's image but permits renaming
+# it. When the direct copy hits an engine that is in use, stage the pin first,
+# move that build aside, then rename the pin into the canonical path; sessions
+# already open keep the renamed image until they exit, and the next launch runs
+# the pin. Returns the aside path when the rename was needed, otherwise $null.
+function Install-EngineFile([string]$Source, [string]$Destination) {
+    try {
+        Copy-Item $Source $Destination -Force -ErrorAction Stop
+        return $null
+    } catch {
+        if (-not (Test-Path -LiteralPath $Destination)) { throw }
+        $staged = "$Destination.new"
+        Copy-Item $Source $staged -Force -ErrorAction Stop
+        try {
+            $aside = "$Destination.old-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
+            Move-Item -LiteralPath $Destination -Destination $aside -ErrorAction Stop
+            try {
+                Move-Item -LiteralPath $staged -Destination $Destination -ErrorAction Stop
+                return $aside
+            } catch {
+                Move-Item -LiteralPath $aside -Destination $Destination -ErrorAction SilentlyContinue
+                throw
+            }
+        } finally {
+            Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # The engine is a pinned, hash-verified file. When the pin is rebuilt (for
 # example by a rebrand patch) but this tree still holds the old binary, install
-# the pin before launching. A running engine locks its file, so a failure here
-# is expected while another session is open; the next launch retries.
+# the pin before launching.
 function Ensure-EnginePin {
     if ($env:CLAUDE_FIFE_ENGINE_PATH) { return }  # explicit override: never replace it
     $recordFile = Join-Path $backupDir 'SHA256.txt'
@@ -49,10 +77,24 @@ function Ensure-EnginePin {
     if (-not (Test-Path $pinExe)) { return }
     if ((Get-FileHash $engine -Algorithm SHA256).Hash -eq $record.SHA256) { return }
     try {
-        Copy-Item $pinExe $engine -Force -ErrorAction Stop
-        Write-Host 'claude-fife: installed pinned engine build.'
+        $aside = Install-EngineFile $pinExe $engine
+        if ($aside) {
+            Write-Host "claude-fife: installed pinned engine build (previous image kept at $(Split-Path -Leaf $aside))."
+        } else {
+            Write-Host 'claude-fife: installed pinned engine build.'
+        }
     } catch {
         Write-Warning 'claude-fife: engine pin update pending (binary in use); it will apply on the next launch.'
+    }
+}
+
+# An image swapped in while sessions were open stays locked until every process
+# that mapped it exits. Remove stale images on each launch; a file that is still
+# locked is simply retried on the next one.
+function Remove-StaleEngineImages {
+    if ($env:CLAUDE_FIFE_ENGINE_PATH) { return }  # explicit override: not our tree
+    foreach ($f in Get-ChildItem (Split-Path -Parent $engine) -Filter 'claude-fife-engine.exe.old-*' -File -ErrorAction SilentlyContinue) {
+        try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop } catch { }
     }
 }
 
@@ -444,6 +486,7 @@ if (-not (Test-Path $engine)) {
 
 Show-ClaudeSymbol $args
 Ensure-EnginePin
+Remove-StaleEngineImages
 Ensure-Router
 Ensure-LabelsProxy
 

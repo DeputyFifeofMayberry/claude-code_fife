@@ -59,6 +59,35 @@ if (-not $PackageVersion) {
 }
 Set-Content (Join-Path $Root 'config\fife-version.txt') $PackageVersion -Encoding UTF8 -NoNewline
 
+# Windows refuses to overwrite a running executable's image but permits renaming
+# it. When the direct copy hits an engine that is in use, stage the pin first,
+# move that build aside, then rename the pin into the canonical path; sessions
+# already open keep the renamed image until they exit, and the next launch runs
+# the pin.
+function Install-EngineFile([string]$Source, [string]$Destination) {
+    try {
+        Copy-Item $Source $Destination -Force -ErrorAction Stop
+        return $null
+    } catch {
+        if (-not (Test-Path -LiteralPath $Destination)) { throw }
+        $staged = "$Destination.new"
+        Copy-Item $Source $staged -Force -ErrorAction Stop
+        try {
+            $aside = "$Destination.old-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
+            Move-Item -LiteralPath $Destination -Destination $aside -ErrorAction Stop
+            try {
+                Move-Item -LiteralPath $staged -Destination $Destination -ErrorAction Stop
+                return $aside
+            } catch {
+                Move-Item -LiteralPath $aside -Destination $Destination -ErrorAction SilentlyContinue
+                throw
+            }
+        } finally {
+            Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 # 2. Engine from verified backup + launchers
 $engineBackup = if ($EngineBackupDir) { $EngineBackupDir } else { $BackupDir }
 $recordFile = Join-Path $engineBackup 'SHA256.txt'
@@ -68,9 +97,10 @@ $expectedHash = ((Get-Content $recordFile | Where-Object { $_ -like 'SHA256=*' }
 if ((Get-FileHash $backupExe -Algorithm SHA256).Hash -ne $expectedHash) { throw 'Backup engine hash mismatch - refusing to install.' }
 $installedExe = Join-Path $Root 'bin\claude-fife-engine.exe'
 # Skip the copy when the installed engine already matches the pin, so setup can
-# run while claude-fife is in use (Windows locks a running executable).
+# run while claude-fife is in use without touching the locked image.
 if (-not ((Test-Path $installedExe) -and (Get-FileHash $installedExe -Algorithm SHA256).Hash -eq $expectedHash)) {
-    Copy-Item $backupExe $installedExe -Force
+    $aside = Install-EngineFile $backupExe $installedExe
+    if ($aside) { Write-Host "Previous engine image kept at $aside (in use when setup ran)." }
 }
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.ps1') (Join-Path $Root 'bin\claude-fife.ps1') -Force
 Copy-Item (Join-Path $fifeSrc 'launcher\claude-fife.cmd') (Join-Path $Root 'bin\claude-fife.cmd') -Force
